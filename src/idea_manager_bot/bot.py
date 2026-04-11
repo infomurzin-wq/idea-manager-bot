@@ -280,16 +280,18 @@ class IdeaManagerApp:
                 project = self.registry[project_key]
                 project_context = load_project_context(project)
                 idea_text = self._build_idea_text_for_analysis(payload)
-                analysis = self.llm.analyze_idea(
+                analysis = await asyncio.to_thread(
+                    self.llm.analyze_idea,
                     idea_text,
                     project,
                     project_context,
                     [],
                 )
-                sync_export_status, sync_export_target = self._export_payload(
+                sync_export_status, sync_export_target = await asyncio.to_thread(
+                    self._export_payload,
                     payload,
-                    entity_type="idea",
-                    remote_id=f"idea-{project.key}-{self._safe_remote_id_suffix(payload)}",
+                    "idea",
+                    f"idea-{project.key}-{self._safe_remote_id_suffix(payload)}",
                 )
                 record = self.storage.create_idea(
                     project=project,
@@ -323,10 +325,11 @@ class IdeaManagerApp:
                 payload["pending_project"] = project_key
 
                 project = self.registry[project_key]
-                sync_export_status, sync_export_target = self._export_payload(
+                sync_export_status, sync_export_target = await asyncio.to_thread(
+                    self._export_payload,
                     payload,
-                    entity_type="context",
-                    remote_id=f"context-{project.key}-{self._safe_remote_id_suffix(payload)}",
+                    "context",
+                    f"context-{project.key}-{self._safe_remote_id_suffix(payload)}",
                 )
                 record = self.storage.create_context(
                     project=project,
@@ -419,7 +422,13 @@ class IdeaManagerApp:
                 f"Текст идеи пользователя:\n{record.normalized_text}\n\n"
                 f"Извлечённое содержимое ссылки:\n{record.extracted_content}"
             )
-        record.analysis = self.llm.analyze_idea(analysis_input, project, project_context, comments)
+        record.analysis = await asyncio.to_thread(
+            self.llm.analyze_idea,
+            analysis_input,
+            project,
+            project_context,
+            comments,
+        )
         record.updated_at = record.comments[-1].created_at
         self.storage.save_record(record)
         self._reset_flow(context)
@@ -449,7 +458,7 @@ class IdeaManagerApp:
             audio_path = str(temp_path)
             raw_input = update.message.caption or f"[{source_type} message]"
             try:
-                normalized_text = self.llm.transcribe_audio(temp_path)
+                normalized_text = await asyncio.to_thread(self.llm.transcribe_audio, temp_path)
             except Exception as exc:  # noqa: BLE001
                 LOGGER.exception("Failed to transcribe audio: %s", exc)
                 normalized_text = raw_input
@@ -457,7 +466,7 @@ class IdeaManagerApp:
         links = self.storage.extract_links(raw_input or normalized_text)
         if links:
             source_url = links[0]
-            link_result = self.link_reader.read(source_url)
+            link_result = await asyncio.to_thread(self.link_reader.read, source_url)
             extracted_content = link_result.extracted_content
             link_fetch_status = link_result.status
             link_fetch_error = link_result.error_message
@@ -576,7 +585,12 @@ class IdeaManagerApp:
         project = self.registry[record.project_key]
         project_context = load_project_context(project)
         source_text = self._build_context_source_text(record)
-        summary = self.llm.summarize_context(source_text, project, project_context)
+        summary = await asyncio.to_thread(
+            self.llm.summarize_context,
+            source_text,
+            project,
+            project_context,
+        )
         await message.reply_text(
             f"Summary для контекста\n\n{summary[:3200]}",
             reply_markup=self._context_actions(record.context_id, record.project_key),
@@ -591,7 +605,13 @@ class IdeaManagerApp:
         project = self.registry[record.project_key]
         project_context = load_project_context(project)
         idea_text = self._build_context_source_text(record)
-        analysis = self.llm.analyze_idea(idea_text, project, project_context, [])
+        analysis = await asyncio.to_thread(
+            self.llm.analyze_idea,
+            idea_text,
+            project,
+            project_context,
+            [],
+        )
         idea_record = self.storage.create_idea(
             project=project,
             source_type="context-derived",
