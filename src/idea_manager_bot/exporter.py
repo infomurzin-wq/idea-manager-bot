@@ -5,6 +5,7 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from idea_manager_bot.config import Settings
 
@@ -53,7 +54,8 @@ class SyncExporter:
         if base_path:
             relative_path = f"{base_path}/{relative_path}"
 
-        url = f"https://api.github.com/repos/{self.settings.github_sync_repo}/contents/{relative_path}"
+        encoded_relative_path = quote(relative_path, safe="/")
+        url = f"https://api.github.com/repos/{self.settings.github_sync_repo}/contents/{encoded_relative_path}"
         body = json.dumps(
             {
                 "message": f"Add {entity_type} {remote_id}",
