@@ -1,0 +1,1 @@
+"""Idea Manager Bot."""
