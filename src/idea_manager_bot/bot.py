@@ -700,7 +700,9 @@ class IdeaManagerApp:
     @staticmethod
     def _safe_remote_id_suffix(payload: dict[str, Any]) -> str:
         base = (payload.get("normalized_text") or payload.get("raw_input") or "item").strip().lower()
-        safe = "".join(char for char in base if char.isalnum())[:12]
+        # GitHub content path in exporter must stay ASCII-only.
+        # str.isalnum() keeps Cyrillic symbols too, which breaks urllib URL handling.
+        safe = "".join(char for char in base if ("a" <= char <= "z") or ("0" <= char <= "9"))[:24]
         return safe or "item"
 
     @staticmethod
