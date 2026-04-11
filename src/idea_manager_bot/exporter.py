@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -44,13 +45,14 @@ class SyncExporter:
         if not self.settings.github_sync_repo or not self.settings.github_sync_token:
             return False, "GITHUB_SYNC_REPO or GITHUB_SYNC_TOKEN is not configured"
 
+        safe_remote_id = self._safe_remote_id(remote_id)
         payload = payload.copy()
-        payload["remote_id"] = remote_id
+        payload["remote_id"] = safe_remote_id
         json_content = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         encoded = base64.b64encode(json_content).decode("ascii")
 
         base_path = self.settings.github_sync_base_path.strip("/")
-        relative_path = f"incoming/{entity_type}s/{remote_id}.json"
+        relative_path = f"incoming/{entity_type}s/{safe_remote_id}.json"
         if base_path:
             relative_path = f"{base_path}/{relative_path}"
 
@@ -58,7 +60,7 @@ class SyncExporter:
         url = f"https://api.github.com/repos/{self.settings.github_sync_repo}/contents/{encoded_relative_path}"
         body = json.dumps(
             {
-                "message": f"Add {entity_type} {remote_id}",
+                "message": f"Add {entity_type} {safe_remote_id}",
                 "content": encoded,
                 "branch": self.settings.github_sync_branch,
             }
@@ -85,3 +87,10 @@ class SyncExporter:
             return False, f"GitHub HTTP {exc.code}: {detail[:400]}"
         except Exception as exc:  # noqa: BLE001
             return False, str(exc)
+
+    @staticmethod
+    def _safe_remote_id(remote_id: str) -> str:
+        value = re.sub(r"[^A-Za-z0-9._-]+", "-", remote_id).strip("-").lower()
+        if not value:
+            return "item"
+        return value[:80]
