@@ -3,10 +3,10 @@ from __future__ import annotations
 import base64
 import json
 import re
-import urllib.error
-import urllib.request
 from pathlib import Path
 from urllib.parse import quote
+
+import httpx
 
 from idea_manager_bot.config import Settings
 
@@ -58,33 +58,28 @@ class SyncExporter:
 
         encoded_relative_path = quote(relative_path, safe="/")
         url = f"https://api.github.com/repos/{self.settings.github_sync_repo}/contents/{encoded_relative_path}"
-        body = json.dumps(
-            {
-                "message": f"Add {entity_type} {safe_remote_id}",
-                "content": encoded,
-                "branch": self.settings.github_sync_branch,
-            }
-        ).encode("utf-8")
-
-        request = urllib.request.Request(
-            url,
-            data=body,
-            method="PUT",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.settings.github_sync_token}",
-                "Content-Type": "application/json",
-                "User-Agent": "IdeaManagerBot/0.1",
-            },
-        )
+        body = {
+            "message": f"Add {entity_type} {safe_remote_id}",
+            "content": encoded,
+            "branch": self.settings.github_sync_branch,
+        }
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self.settings.github_sync_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "IdeaManagerBot/0.1",
+        }
 
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                _ = response.read()
+            with httpx.Client(timeout=20.0) as client:
+                response = client.put(url, json=body, headers=headers)
+                response.raise_for_status()
             return True, f"github://{self.settings.github_sync_repo}/{relative_path}"
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="ignore")
-            return False, f"GitHub HTTP {exc.code}: {detail[:400]}"
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text or ""
+            return False, f"GitHub HTTP {exc.response.status_code}: {detail[:400]}"
+        except UnicodeEncodeError as exc:
+            return False, f"GitHub export encoding error: {exc}"
         except Exception as exc:  # noqa: BLE001
             return False, str(exc)
 
