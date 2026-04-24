@@ -83,6 +83,21 @@ class IdeaManagerApp:
             reply_markup=self._main_menu(),
         )
 
+    async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        chat = update.effective_chat
+        user = update.effective_user
+        chat_id = chat.id if chat else "n/a"
+        user_id = user.id if user else "n/a"
+        chat_type = chat.type if chat else "n/a"
+        await update.message.reply_text(
+            f"chat_id: {chat_id}\n"
+            f"user_id: {user_id}\n"
+            f"chat_type: {chat_type}",
+            reply_markup=self._main_menu(),
+        )
+
     async def projects_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
             return
@@ -873,6 +888,7 @@ async def post_init(application: Application) -> None:
         BotCommand("start", "Запустить бота"),
         BotCommand("menu", "Открыть меню"),
         BotCommand("help", "Подсказка"),
+        BotCommand("myid", "Показать chat_id"),
         BotCommand("projects", "Список разделов"),
         BotCommand("list", "Список идей"),
         BotCommand("show", "Показать идею по ID"),
@@ -888,6 +904,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("start", app_logic.start))
     application.add_handler(CommandHandler("menu", app_logic.menu_command))
     application.add_handler(CommandHandler("help", app_logic.help_command))
+    application.add_handler(CommandHandler("myid", app_logic.myid_command))
     application.add_handler(CommandHandler("projects", app_logic.projects_command))
     application.add_handler(CommandHandler("list", app_logic.list_command))
     application.add_handler(CommandHandler("show", app_logic.show_command))
