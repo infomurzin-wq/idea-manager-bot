@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .models import ReportSnapshot
+from .diffing import render_incremental_diff
 from .normalize import compute_content_hash, report_payload_for_meaningful_hash
 from .rendering import render_report
 from .sources.espn import build_report_from_event_url
@@ -15,12 +16,13 @@ from .state_store import (
     ensure_runtime_dirs,
     load_active_weekend_event,
     load_last_sent_report,
+    load_sent_snapshot,
     update_sent_report_state,
     write_active_weekend_event,
     write_rendered_markdown,
     write_snapshot,
 )
-from .telegram import send_report_delivery
+from .telegram import send_report_delivery, send_update_delivery
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
@@ -127,8 +129,9 @@ def _run_incremental(*, current_date: date, send: str, weekend_only: bool) -> Mo
             event_url=active_event.get("event_url", "n/a"),
         )
     report = build_report_from_event_url(active_event["event_url"])
-    snapshot_path, markdown_path = _persist_report(report)
     previous_entry = load_last_sent_report(report.event.event_slug)
+    previous_report = load_sent_snapshot(previous_entry)
+    snapshot_path, markdown_path = _persist_report(report)
     meaningful_hash = _meaningful_hash(report)
     previous_hash = (
         previous_entry.get("last_meaningful_hash")
@@ -151,7 +154,12 @@ def _run_incremental(*, current_date: date, send: str, weekend_only: bool) -> Mo
             markdown_path=str(markdown_path),
         changed=False,
     )
-    _send_if_requested(send=send, report=report, markdown_path=markdown_path, report_kind="incremental")
+    diff_markdown_path = _persist_incremental_diff(previous_report=previous_report, report=report)
+    _send_incremental_if_requested(
+        send=send,
+        report=report,
+        diff_markdown_path=diff_markdown_path,
+    )
     update_sent_report_state(
         event_slug=report.event.event_slug,
         report=report,
@@ -168,7 +176,7 @@ def _run_incremental(*, current_date: date, send: str, weekend_only: bool) -> Mo
         event_date=report.event.event_date,
         event_url=report.event.event_url,
         snapshot_path=str(snapshot_path),
-        markdown_path=str(markdown_path),
+        markdown_path=str(diff_markdown_path),
         changed=True,
     )
 
@@ -178,6 +186,11 @@ def _persist_report(report: ReportSnapshot) -> tuple[Path, Path]:
     markdown = render_report(report)
     markdown_path = write_rendered_markdown(report.event.event_slug, markdown, "rendered-report.md")
     return snapshot_path, markdown_path
+
+
+def _persist_incremental_diff(*, previous_report: ReportSnapshot | None, report: ReportSnapshot) -> Path:
+    markdown = render_incremental_diff(previous_report, report)
+    return write_rendered_markdown(report.event.event_slug, markdown, "incremental-changes.md")
 
 
 def _event_is_still_in_weekend_window(*, current_date: date, event_date: str) -> bool:
@@ -210,5 +223,19 @@ def _send_if_requested(
             markdown_path=markdown_path,
             report_kind=report_kind,
         )
+        return
+    raise ValueError(f"Unsupported send target: {send}")
+
+
+def _send_incremental_if_requested(
+    *,
+    send: str,
+    report: ReportSnapshot,
+    diff_markdown_path: Path,
+) -> None:
+    if send == "none":
+        return
+    if send == "telegram":
+        send_update_delivery(report=report, diff_markdown_path=diff_markdown_path)
         return
     raise ValueError(f"Unsupported send target: {send}")

@@ -106,18 +106,42 @@ def update_sent_report_state(
     send_target: str,
 ) -> Path:
     payload = load_sent_reports_state()
+    sent_snapshot_path = write_sent_snapshot(report)
     payload[event_slug] = {
         "event_slug": event_slug,
         "last_sent_hash": report.content_hash,
         "last_sent_at": report.generated_at,
         "last_sent_kind": report_kind,
         "last_sent_path": str(markdown_path),
+        "last_snapshot_path": str(sent_snapshot_path),
         "last_send_target": send_target,
         "last_meaningful_hash": meaningful_hash,
         "event_date": report.event.event_date,
         "event_url": report.event.event_url,
     }
     return _write_state_json("sent_reports.json", payload)
+
+
+def write_sent_snapshot(report: ReportSnapshot) -> Path:
+    ensure_runtime_dirs()
+    target_dir = get_paths().runtime_state_dir / "sent_snapshots"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"{report.event.event_slug}.json"
+    target.write_text(canonical_json(report.to_dict()) + "\n", encoding="utf-8")
+    return target
+
+
+def load_sent_snapshot(entry: dict[str, Any] | None) -> ReportSnapshot | None:
+    if not entry:
+        return None
+    raw_path = entry.get("last_snapshot_path")
+    if not raw_path:
+        return None
+    path = Path(str(raw_path))
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return ReportSnapshot.from_dict(payload)
 
 
 def _load_state_json(filename: str) -> dict[str, Any] | None:

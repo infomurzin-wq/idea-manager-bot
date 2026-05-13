@@ -52,6 +52,21 @@ def send_report_delivery(
     )
 
 
+def send_update_delivery(
+    *,
+    report: ReportSnapshot,
+    diff_markdown_path: Path,
+) -> None:
+    config = load_telegram_config()
+    send_message(config, build_incremental_summary_message(report=report))
+    send_document(
+        config,
+        document_path=diff_markdown_path,
+        caption=f"{report.event.event_name} | {report.event.event_date} | только изменения",
+        filename=f"{report.event.event_date}-{report.event.event_slug}-changes.md",
+    )
+
+
 def build_summary_message(*, report: ReportSnapshot, report_kind: str) -> str:
     if report_kind == "baseline":
         title = "UFC baseline report"
@@ -66,6 +81,17 @@ def build_summary_message(*, report: ReportSnapshot, report_kind: str) -> str:
             f"Дата: {report.event.event_date}",
             f"Боёв: {report.event.confirmed_bouts}",
             description,
+        ]
+    )
+
+
+def build_incremental_summary_message(*, report: ReportSnapshot) -> str:
+    return "\n".join(
+        [
+            "UFC report update",
+            f"Турнир: {report.event.event_name}",
+            f"Дата: {report.event.event_date}",
+            "Найдены meaningful changes. Прикреплён файл только с изменениями, не полный отчёт.",
         ]
     )
 
