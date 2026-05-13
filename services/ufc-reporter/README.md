@@ -61,7 +61,8 @@
 Результат:
 - baseline и updates доходят в личный Telegram-чат пользователя;
 - полный Markdown-отчёт отправляется как `.md` файл;
-- короткое summary или diff отправляется отдельным сообщением.
+- baseline отправляет полный Markdown-отчёт;
+- incremental отправляет короткое summary и отдельный `.md` файл только с изменениями.
 
 ### Фаза 5. Railway automation
 
@@ -133,7 +134,7 @@ PYTHONPATH=07_automation/src python -m ufc_reporter.cli monitor \
 - если event найден, создаёт baseline snapshot и открывает `active_weekend_event.json`;
 - в incremental-режиме продолжает только уже открытую weekend window;
 - сравнивает не raw `content_hash`, а `meaningful_hash`, чтобы micro-moves в `Polymarket` totals не считались полноценным update сами по себе;
-- при `--send telegram` отправляет короткое summary и полный Markdown-отчёт как `.md` document.
+- при `--send telegram` baseline отправляет полный Markdown-отчёт, а incremental отправляет только `incremental-changes.md` с новыми/изменёнными данными.
 
 Telegram delivery требует env-переменные:
 
@@ -167,6 +168,8 @@ python -m ufc_reporter.cli telegram-send-report \
 
 - `telegram.py` реализует `sendMessage` и `sendDocument` через Telegram Bot API;
 - `monitor --send telegram` отправляет summary message и `.md` document;
+- baseline document содержит полный отчёт;
+- incremental document содержит только изменения относительно последнего отправленного snapshot;
 - личный `chat_id` получен через `/myid`: `443939869`;
 - `telegram-updates` остаётся fallback-путём, но не основным способом;
 - `telegram-send-report` отправляет уже готовый runtime Markdown без полного rebuild;
