@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 import json
 import os
 import re
+import time
 from datetime import datetime
 from typing import Any
 
@@ -24,7 +27,8 @@ from .signals import build_pre_fight_signals
 from .ufc_official import enrich_event_with_fallback_card
 
 ESPN_CORE_EVENT_URL = "https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/events/{event_id}?lang=en&region=us"
-CORE_FALLBACK_HISTORY_LIMIT = int(os.environ.get("UFC_REPORTER_CORE_HISTORY_LIMIT", "0"))
+CORE_FALLBACK_HISTORY_LIMIT = int(os.environ.get("UFC_REPORTER_CORE_HISTORY_LIMIT", "5"))
+CORE_FALLBACK_WORKERS = max(1, int(os.environ.get("UFC_REPORTER_CORE_WORKERS", "8")))
 
 
 def build_report_from_event_url(event_url: str) -> ReportSnapshot:
@@ -236,7 +240,7 @@ def build_bouts_from_core_event(payload: dict[str, Any], *, event_date: str) -> 
     if not isinstance(competitions, list):
         return []
 
-    bouts: list[BoutSnapshot] = []
+    bout_inputs: list[tuple[int, dict[str, Any], list[dict[str, Any]], str, str]] = []
     sorted_competitions = sorted(
         (item for item in competitions if isinstance(item, dict)),
         key=lambda item: _safe_int(item.get("matchNumber"), 999),
@@ -252,35 +256,110 @@ def build_bouts_from_core_event(payload: dict[str, Any], *, event_date: str) -> 
         if len(ordered_competitors) < 2:
             continue
         weight_class = _core_weight_class(competition)
-        fighter_a = build_fighter_from_core_competitor(
-            ordered_competitors[0],
-            event_weight_class=weight_class,
-            event_date=event_date,
-        )
-        fighter_b = build_fighter_from_core_competitor(
-            ordered_competitors[1],
-            event_weight_class=weight_class,
-            event_date=event_date,
-        )
         card_segment = _core_card_segment(competition, index)
-        bouts.append(
-            BoutSnapshot(
-                bout_id=str(competition.get("id") or slugify(f"{fighter_a.fighter_name}-{fighter_b.fighter_name}")),
-                fighter_a_name=fighter_a.fighter_name,
-                fighter_b_name=fighter_b.fighter_name,
-                weight_class=weight_class,
-                card_segment=card_segment,
-                status=_core_bout_status(competition, card_segment, index),
-                fighter_a_moneyline_decimal="n/a",
-                fighter_b_moneyline_decimal="n/a",
-                over_1_5_decimal="n/a",
-                over_2_5_decimal="n/a",
-                fighter_a=fighter_a,
-                fighter_b=fighter_b,
-                bout_commentary_ru=build_bout_commentary(fighter_a, fighter_b, weight_class),
+        bout_inputs.append((index, competition, ordered_competitors, weight_class, card_segment))
+
+    fighter_futures = {}
+    with ThreadPoolExecutor(max_workers=CORE_FALLBACK_WORKERS) as executor:
+        for _, _, ordered_competitors, weight_class, _ in bout_inputs:
+            for competitor in ordered_competitors[:2]:
+                key = (
+                    _nested_ref(competitor, "athlete") or str(competitor.get("id") or ""),
+                    weight_class,
+                    event_date,
+                )
+                if key not in fighter_futures:
+                    fighter_futures[key] = executor.submit(
+                        build_fighter_from_core_competitor,
+                        competitor,
+                        event_weight_class=weight_class,
+                        event_date=event_date,
+                    )
+
+        bouts: list[BoutSnapshot] = []
+        for index, competition, ordered_competitors, weight_class, card_segment in bout_inputs:
+            fighter_a = _core_fighter_from_future(
+                fighter_futures,
+                ordered_competitors[0],
+                event_weight_class=weight_class,
+                event_date=event_date,
             )
-        )
+            fighter_b = _core_fighter_from_future(
+                fighter_futures,
+                ordered_competitors[1],
+                event_weight_class=weight_class,
+                event_date=event_date,
+            )
+            bouts.append(
+                BoutSnapshot(
+                    bout_id=str(competition.get("id") or slugify(f"{fighter_a.fighter_name}-{fighter_b.fighter_name}")),
+                    fighter_a_name=fighter_a.fighter_name,
+                    fighter_b_name=fighter_b.fighter_name,
+                    weight_class=weight_class,
+                    card_segment=card_segment,
+                    status=_core_bout_status(competition, card_segment, index),
+                    fighter_a_moneyline_decimal="n/a",
+                    fighter_b_moneyline_decimal="n/a",
+                    over_1_5_decimal="n/a",
+                    over_2_5_decimal="n/a",
+                    fighter_a=fighter_a,
+                    fighter_b=fighter_b,
+                    bout_commentary_ru=build_bout_commentary(fighter_a, fighter_b, weight_class),
+                )
+            )
     return bouts
+
+
+def _core_fighter_from_future(
+    fighter_futures: dict[tuple[str, str, str], object],
+    competitor: dict[str, Any],
+    *,
+    event_weight_class: str,
+    event_date: str,
+) -> FighterSnapshot:
+    key = (
+        _nested_ref(competitor, "athlete") or str(competitor.get("id") or ""),
+        event_weight_class,
+        event_date,
+    )
+    future = fighter_futures[key]
+    try:
+        return future.result()  # type: ignore[attr-defined]
+    except Exception as exc:
+        return _minimal_core_fighter(
+            competitor,
+            event_weight_class=event_weight_class,
+            error=str(exc),
+        )
+
+
+def _minimal_core_fighter(
+    competitor: dict[str, Any],
+    *,
+    event_weight_class: str,
+    error: str,
+) -> FighterSnapshot:
+    fighter_name = str(competitor.get("id") or "Unknown Fighter")
+    return FighterSnapshot(
+        fighter_slug=slugify(fighter_name),
+        fighter_name=fighter_name,
+        record_summary="n/a",
+        wins_summary="0 KO/TKO, 0 Submission, 0 Decision, 0 Other",
+        losses_summary="0 KO/TKO, 0 Submission, 0 Decision, 0 Other",
+        sources=[],
+        last_five=[],
+        fighter_commentary_ru=(
+            f"Fallback Core API не смог раскрыть профиль бойца в {event_weight_class}: {error}"
+        ),
+        pre_fight_signals=[
+            PreFightSignal(
+                summary_ru="Существенных предбоевых сигналов не найдено.",
+                source="n/a",
+                signal_type="none",
+            )
+        ],
+        data_quality="partial",
+    )
 
 
 def build_fighter_from_match_side(
@@ -507,9 +586,21 @@ def _event_id_from_url(event_url: str) -> str:
     return match.group(1)
 
 
+@lru_cache(maxsize=2048)
 def _fetch_core_json(url: str) -> dict[str, Any]:
-    payload = fetch_text(_https_url(url), cache_namespace="espn-core")
-    return json.loads(payload)
+    normalized_url = _https_url(url)
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            payload = fetch_text(normalized_url, cache_namespace="espn-core")
+            return json.loads(payload)
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+    if last_error:
+        raise last_error
+    raise ValueError(f"Could not fetch ESPN Core JSON: {normalized_url}")
 
 
 def _https_url(value: str) -> str:
@@ -813,8 +904,8 @@ def build_fighter_commentary(
 ) -> str:
     if not last_five:
         return (
-            f"По {fighter_name} fallback-сборщик сейчас даёт агрегированный record и методы, "
-            "но last-five не загружен, чтобы не блокировать автоматический cron."
+            f"По {fighter_name} fallback-сборщик дал агрегированный record и методы, "
+            "но last-five не удалось стабильно загрузить из ESPN Core API в этом прогоне."
         )
     wins = sum(1 for fight in last_five if fight.result == "🟩 W")
     finish_wins = sum(
