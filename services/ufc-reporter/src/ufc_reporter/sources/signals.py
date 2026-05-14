@@ -142,7 +142,10 @@ def _headline_signals(*, fighter_name: str, overview_url: str) -> list[PreFightS
     except Exception:
         return []
 
-    articles = _parse_espn_news_articles(page_html, base_url=news_url)
+    try:
+        articles = _parse_espn_news_articles(page_html, base_url=news_url)
+    except Exception:
+        return []
     name_tokens = _name_tokens(fighter_name)
     signals: list[PreFightSignal] = []
     for article in articles[:12]:
