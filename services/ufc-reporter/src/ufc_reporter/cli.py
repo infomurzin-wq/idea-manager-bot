@@ -298,6 +298,17 @@ def _handle_railway_cron(args: argparse.Namespace) -> int:
         weekend_only=True,
         reference_date=current_date,
     )
+    if (
+        mode == "incremental"
+        and result.status == "skipped"
+        and result.reason == "No active weekend monitoring window is open."
+    ):
+        result = run_monitoring_cycle(
+            mode="baseline",
+            send=args.send,
+            weekend_only=True,
+            reference_date=current_date,
+        )
     print(f"status={result.status}")
     print(f"mode={result.mode}")
     print(f"reason={result.reason}")
