@@ -125,6 +125,11 @@ def format_candidate_message(record: dict[str, Any]) -> str:
         f"Источников: {dedup.get('source_count', 1)}",
     ]
 
+    source_lines = format_source_lines(dedup.get("sources"))
+    if source_lines:
+        lines.extend(["", "Источники:"])
+        lines.extend(source_lines)
+
     if dedup.get("conflicts"):
         lines.extend(["", "Расхождения источников:"])
         for conflict in dedup["conflicts"][:5]:
@@ -250,6 +255,33 @@ def format_list(values: list[str] | None, labels: dict[str, str]) -> str:
     if not values:
         return "нет"
     return ", ".join(labels.get(value, value) for value in values)
+
+
+def format_source_lines(sources: list[dict[str, Any]] | None, *, limit: int = 3) -> list[str]:
+    if not sources:
+        return []
+
+    lines = []
+    for index, source in enumerate(sources[:limit], start=1):
+        label = format_source_label(source)
+        url = source.get("url")
+        if url:
+            lines.append(f"{index}. {label} - {url}")
+        else:
+            lines.append(f"{index}. {label}")
+
+    if len(sources) > limit:
+        lines.append(f"...ещё {len(sources) - limit}")
+
+    return lines
+
+
+def format_source_label(source: dict[str, Any]) -> str:
+    channel = source.get("channel") or "источник"
+    post_date = source.get("post_date")
+    if post_date:
+        return f"{channel} · {post_date}"
+    return str(channel)
 
 
 if __name__ == "__main__":
