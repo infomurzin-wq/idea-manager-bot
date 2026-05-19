@@ -142,6 +142,29 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertTrue(any(callback.startswith("bond:show:") for callback in callbacks))
             self.assertIn("bond:list:new", callbacks)
 
+    def test_bridge_imports_manual_text_with_title_before_bullets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            text = (
+                "ПР-Лизинг 002Р-03 (RU000A10CJ92)\n\n"
+                "• Доходность к оферте: 25,2%\n"
+                "• Купон: 20%, ежемесячно\n"
+                "• ТКД: 20,6%\n"
+                "• Текущая цена: 97% (970 ₽)\n"
+                "• Дата погашения: 05.07.2035\n"
+                "! Call-оферта: 16.08.2027\n"
+                "! Put-оферта: 23.08.2027\n"
+            )
+
+            screen = bridge.import_manual_text(text)
+
+            self.assertIn("ПР-Лизинг 002Р-03", screen["text"])
+            self.assertNotIn("Доходность к оферте: 25,2% (new)", screen["text"])
+
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(
             [[{"text": "Новые кандидаты", "callback_data": "bond:list:new"}]]

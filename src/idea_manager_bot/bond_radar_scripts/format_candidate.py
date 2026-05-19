@@ -136,7 +136,7 @@ def format_candidate_message(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_candidate_list_message(records: list[dict[str, Any]], *, status: str, limit: int = 20) -> str:
+def format_candidate_list_message(records: list[dict[str, Any]], *, status: str, limit: int = 30) -> str:
     title = {
         "new": "Новые кандидаты",
         "watchlist": "Watchlist",

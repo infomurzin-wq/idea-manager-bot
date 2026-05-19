@@ -249,7 +249,16 @@ def split_candidate_blocks(text: str) -> list[CandidateBlock]:
             continue
 
         if is_structured_terms_block(paragraph):
-            block_parts = [paragraph]
+            block_parts = []
+            previous_index = index - 1
+            if (
+                previous_index >= 0
+                and previous_index not in used
+                and is_title_context_paragraph(paragraphs[previous_index])
+            ):
+                block_parts.append(paragraphs[previous_index])
+                used.add(previous_index)
+            block_parts.append(paragraph)
             used.add(index)
             for next_index in range(index + 1, min(index + 3, len(paragraphs))):
                 next_paragraph = paragraphs[next_index]
@@ -321,6 +330,16 @@ def is_structured_terms_block(paragraph: str) -> bool:
         ("купон:" in lowered or "ставка купона" in lowered or "купонный период" in lowered)
         and ("рейтинг" in lowered or re.search(r"\b(?:ru)?[ABCDАВЕКМНОРСТХ]{1,3}[+-]?", normalize_for_codes(paragraph)))
     )
+
+
+def is_title_context_paragraph(paragraph: str) -> bool:
+    cleaned = normalize_text(paragraph)
+    if not cleaned or len(cleaned) > 140:
+        return False
+    lowered = cleaned.lower()
+    if any(marker in lowered for marker in ("купон", "доходность", "ytm", "текущая цена", "дата погашения")):
+        return False
+    return bool(extract_isin(cleaned) or re.search(r"\b\d{3}[РP]-\d+\b", normalize_for_codes(cleaned), re.IGNORECASE))
 
 
 def is_supporting_terms_paragraph(candidate: str, anchor: str) -> bool:
@@ -571,6 +590,10 @@ def extract_offer(lowered: str) -> str | None:
         return None
     if "оферты нет" in lowered or "оферта: нет" in lowered or "без оферты" in lowered or "без оферт" in lowered:
         return "no"
+    offer_dates = re.findall(r"(?:call|put)?-?\s*оферт[аы]?\s*:\s*\d{1,2}\.\d{1,2}\.\d{2,4}", lowered)
+    if offer_dates:
+        return clean_sentence("; ".join(offer_dates))
+    lowered = re.sub(r"доходность\s+к\s+оферте\s*:\s*\d{1,3}(?:[,.]\d{1,2})?\s?%", "", lowered)
     match = re.search(r"оферт[аы]?(?:\s+put|\s+call)?[^.;\n]{0,80}", lowered)
     return clean_sentence(match.group(0)) if match else None
 

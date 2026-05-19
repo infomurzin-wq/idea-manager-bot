@@ -136,7 +136,7 @@ def detail_buttons(record: dict[str, Any]) -> list[list[dict[str, str]]]:
     return rows
 
 
-def list_candidate_buttons(records: list[dict[str, Any]], *, limit: int = 20) -> list[list[dict[str, str]]]:
+def list_candidate_buttons(records: list[dict[str, Any]], *, limit: int = 30) -> list[list[dict[str, str]]]:
     rows: list[list[dict[str, str]]] = []
     for index, record in enumerate(records[:limit], start=1):
         title = candidate_button_title(index, record)
