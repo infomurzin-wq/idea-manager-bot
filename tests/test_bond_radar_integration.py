@@ -186,7 +186,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
             bridge.handle_action(f"bond:watch:{short_id}")
             watchlist_screen = bridge.handle_action("bond:list:watchlist")
-            show_callback = watchlist_screen["buttons"][0][0]["callback_data"]
+            show_callback = watchlist_screen["buttons"][1][0]["callback_data"]
             self.assertEqual(f"bond:show:watchlist:{short_id}", show_callback)
 
             detail_screen = bridge.handle_action(show_callback)
@@ -241,7 +241,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
             bridge.handle_action("bond:home")
 
             page_screen = bridge.handle_action("bond:list:new:2")
-            show_callback = page_screen["buttons"][1][0]["callback_data"]
+            show_callback = page_screen["buttons"][2][0]["callback_data"]
 
             self.assertIn("Страница 2/3", page_screen["text"])
             self.assertIn("Показано 11-20 из 25.", page_screen["text"])
@@ -250,6 +250,21 @@ class BondRadarIntegrationTest(unittest.TestCase):
             detail_screen = bridge.handle_action(show_callback)
 
             self.assertIn({"text": "Назад", "callback_data": "bond:list:new:2"}, detail_screen["buttons"][-1])
+
+    def test_sort_controls_exist_for_rejected_list_and_keep_back_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            bridge.handle_action("bond:home")
+
+            sorted_screen = bridge.handle_action("bond:list:rejected:1:ytm_desc")
+
+            self.assertIn({"text": "Доходность ↓", "callback_data": "bond:list:rejected:1:ytm_asc"}, sorted_screen["buttons"][0])
+            self.assertIn({"text": "Погашение ↑↓", "callback_data": "bond:list:rejected:1:maturity_desc"}, sorted_screen["buttons"][0])
+            self.assertIn({"text": "Рейтинг ↑↓", "callback_data": "bond:list:rejected:1:rating_desc"}, sorted_screen["buttons"][0])
 
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(
