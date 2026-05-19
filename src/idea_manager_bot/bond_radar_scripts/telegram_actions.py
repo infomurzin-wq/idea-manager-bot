@@ -59,20 +59,33 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         }
 
     if action.startswith("bond:show:"):
-        key = resolve_action_key(records, action.removeprefix("bond:show:"))
-        return show_screen(records, key)
+        origin_status, value = parse_origin_and_key(action.removeprefix("bond:show:"))
+        key = resolve_action_key(records, value)
+        return show_screen(records, key, origin_status=origin_status)
 
     if action.startswith("bond:watch:"):
-        key = resolve_action_key(records, action.removeprefix("bond:watch:"))
+        origin_status, value = parse_origin_and_key(action.removeprefix("bond:watch:"))
+        key = resolve_action_key(records, value)
         record = candidate_store.set_candidate_status(records, key, "watchlist")
         candidate_store.write_store(store_path, records)
-        return show_screen(records, record["storage"]["key"], prefix="Добавлено в Watchlist.")
+        return show_screen(
+            records,
+            record["storage"]["key"],
+            prefix="Добавлено в Watchlist.",
+            origin_status=origin_status,
+        )
 
     if action.startswith("bond:reject:"):
-        key = resolve_action_key(records, action.removeprefix("bond:reject:"))
+        origin_status, value = parse_origin_and_key(action.removeprefix("bond:reject:"))
+        key = resolve_action_key(records, value)
         record = candidate_store.set_candidate_status(records, key, "rejected")
         candidate_store.write_store(store_path, records)
-        return show_screen(records, record["storage"]["key"], prefix="Кандидат отклонен.")
+        return show_screen(
+            records,
+            record["storage"]["key"],
+            prefix="Кандидат отклонен.",
+            origin_status=origin_status,
+        )
 
     return {
         "text": f"Неизвестное действие: {action}",
@@ -104,43 +117,60 @@ def home_screen(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
 def list_screen(records: dict[str, dict[str, Any]], status: str) -> dict[str, Any]:
     items = candidate_store.list_candidates(records, status=status)
     text = format_candidate.format_candidate_list_message(items, status=status)
-    buttons = list_candidate_buttons(items)
+    buttons = list_candidate_buttons(items, origin_status=status)
     if status == "new":
         buttons.insert(0, [button("Добавить вручную", ACTION_ADD_MANUAL)])
     buttons.extend([[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]])
     return {"text": text, "buttons": buttons}
 
 
-def show_screen(records: dict[str, dict[str, Any]], key: str, *, prefix: str | None = None) -> dict[str, Any]:
+def show_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    prefix: str | None = None,
+    origin_status: str | None = None,
+) -> dict[str, Any]:
     record = candidate_store.get_candidate(records, key)
     text = format_candidate.format_candidate_message(record)
     if prefix:
         text = f"{prefix}\n\n{text}"
-    return {"text": text, "buttons": detail_buttons(record)}
+    return {"text": text, "buttons": detail_buttons(record, origin_status=origin_status)}
 
 
-def detail_buttons(record: dict[str, Any]) -> list[list[dict[str, str]]]:
+def detail_buttons(record: dict[str, Any], *, origin_status: str | None = None) -> list[list[dict[str, str]]]:
     key = record["storage"]["key"]
     short_id = short_callback_id(key)
     status = record["storage"]["status"]
+    back_status = origin_status if origin_status in candidate_store.VALID_STATUSES else status
     rows: list[list[dict[str, str]]] = []
 
     if status == "new":
-        rows.append([button("В watchlist", f"bond:watch:{short_id}"), button("Отклонить", f"bond:reject:{short_id}")])
+        rows.append(
+            [
+                button("В watchlist", f"bond:watch:{back_status}:{short_id}"),
+                button("Отклонить", f"bond:reject:{back_status}:{short_id}"),
+            ]
+        )
     elif status == "watchlist":
-        rows.append([button("Отклонить", f"bond:reject:{short_id}")])
+        rows.append([button("Отклонить", f"bond:reject:{back_status}:{short_id}")])
     elif status == "rejected":
-        rows.append([button("В watchlist", f"bond:watch:{short_id}")])
+        rows.append([button("В watchlist", f"bond:watch:{back_status}:{short_id}")])
 
-    rows.append([button("Назад", f"bond:list:{status}"), button("Главное меню", ACTION_MAIN_MENU)])
+    rows.append([button("Назад", f"bond:list:{back_status}"), button("Главное меню", ACTION_MAIN_MENU)])
     return rows
 
 
-def list_candidate_buttons(records: list[dict[str, Any]], *, limit: int = 30) -> list[list[dict[str, str]]]:
+def list_candidate_buttons(
+    records: list[dict[str, Any]],
+    *,
+    origin_status: str,
+    limit: int = 30,
+) -> list[list[dict[str, str]]]:
     rows: list[list[dict[str, str]]] = []
     for index, record in enumerate(records[:limit], start=1):
         title = candidate_button_title(index, record)
-        rows.append([button(title, f"bond:show:{short_callback_id(record['storage']['key'])}")])
+        rows.append([button(title, f"bond:show:{origin_status}:{short_callback_id(record['storage']['key'])}")])
     return rows
 
 
@@ -165,6 +195,13 @@ def resolve_action_key(records: dict[str, dict[str, Any]], value: str) -> str:
         if short_callback_id(key) == value:
             return key
     return value
+
+
+def parse_origin_and_key(value: str) -> tuple[str | None, str]:
+    origin, separator, key = value.partition(":")
+    if separator and origin in candidate_store.VALID_STATUSES:
+        return origin, key
+    return None, value
 
 
 def short_callback_id(key: str) -> str:

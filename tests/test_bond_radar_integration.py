@@ -165,6 +165,39 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("ПР-Лизинг 002Р-03", screen["text"])
             self.assertNotIn("Доходность к оферте: 25,2% (new)", screen["text"])
 
+    def test_reject_from_watchlist_keeps_back_navigation_to_watchlist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            bridge.handle_action("bond:home")
+
+            telegram_actions = bridge._import_from_scripts_dir("telegram_actions")
+            candidate_store = bridge._import_from_scripts_dir("candidate_store")
+            records = candidate_store.load_store(store_path)
+            key = next(
+                key
+                for key, record in records.items()
+                if record["storage"]["status"] == "new"
+            )
+            short_id = telegram_actions.short_callback_id(key)
+
+            bridge.handle_action(f"bond:watch:{short_id}")
+            watchlist_screen = bridge.handle_action("bond:list:watchlist")
+            show_callback = watchlist_screen["buttons"][0][0]["callback_data"]
+            self.assertEqual(f"bond:show:watchlist:{short_id}", show_callback)
+
+            detail_screen = bridge.handle_action(show_callback)
+            reject_callback = detail_screen["buttons"][0][0]["callback_data"]
+            self.assertEqual(f"bond:reject:watchlist:{short_id}", reject_callback)
+
+            rejected_screen = bridge.handle_action(reject_callback)
+
+            self.assertIn("Статус: отклонен", rejected_screen["text"])
+            self.assertIn({"text": "Назад", "callback_data": "bond:list:watchlist"}, rejected_screen["buttons"][-1])
+
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(
             [[{"text": "Новые кандидаты", "callback_data": "bond:list:new"}]]
