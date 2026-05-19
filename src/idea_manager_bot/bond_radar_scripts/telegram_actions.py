@@ -259,14 +259,24 @@ def candidate_button_title(index: int, record: dict[str, Any]) -> str:
     rating = display_short(instrument.get("rating"))
     ytm = display_short(terms.get("ytm_raw") or terms.get("ytm"))
     coupon = display_short(terms.get("coupon_raw") or terms.get("coupon"))
+    maturity = maturity_short(terms.get("maturity_date"))
     rate = f"YTM {ytm}" if ytm != "н/д" else f"купон {coupon}"
-    return f"{index}. {title} | {rating} | {rate}"
+    return f"{index}. {title} | {rating} | {rate} | {maturity}"
 
 
 def display_short(value: Any) -> str:
     if value is None or value == "" or value == []:
         return "н/д"
     return str(value)
+
+
+def maturity_short(value: Any) -> str:
+    if value is None or value == "" or value == []:
+        return "пог. н/д"
+    raw = str(value)
+    if match := re.fullmatch(r"(\d+(?:\.\d+)?) years", raw):
+        return f"срок {match.group(1)} г."
+    return f"пог. {raw}"
 
 
 def count_by_status(records: dict[str, dict[str, Any]]) -> dict[str, int]:
