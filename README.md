@@ -108,6 +108,23 @@ idea-manager-bot/
 
 По кнопке `Сделать из контекста идею` бот создаёт новую карточку идеи в том же проекте и сразу строит по ней анализ.
 
+## Раздел облигаций
+
+В главное меню добавлен раздел `Облигации`, а также команда `/bonds`.
+
+Сейчас это thin integration с Bond Radar MVP:
+
+- общий бот принимает кнопку или callback `bond:*`;
+- `BondRadarBridge` передаёт действие в `learning-programming/04_projects/bond-radar-bot/scripts/telegram_actions.py`;
+- Bond Radar возвращает экран в формате `text + buttons`;
+- общий бот только отправляет сообщение и inline-кнопки.
+
+Так бизнес-логика облигаций не смешивается с логикой идей и контекста.
+
+Пути Bond Radar задаются через `BOND_RADAR_PROJECT_DIR`, `BOND_RADAR_SCRIPTS_DIR` и `BOND_RADAR_STORE_PATH`. Если переменные пустые, локально используется проект `learning-programming/04_projects/bond-radar-bot`, а в deploy-контексте bridge может работать через bundled scripts внутри `idea_manager_bot/bond_radar_scripts`.
+
+Для Railway bundled seed с текущими кандидатами копируется в `$BOT_DATA_DIR/bond-radar/candidates_store.jsonl` только если store ещё не создан. После этого изменения статусов живут в volume.
+
 ## Как бот работает со ссылками
 
 Если пользователь отправляет ссылку, бот должен пройти такой конвейер:
@@ -165,6 +182,7 @@ idea-manager-bot/
 - `/menu` — открыть главное меню
 - `/help` — подсказка по сценариям
 - `/myid` — показать `chat_id`, `user_id` и тип чата
+- `/bonds` — открыть раздел Bond Radar / облигации
 - `/projects` — доступные проекты
 - `/list ufc-betting` — резервный способ показать идеи проекта
 - `/show IDEA_ID` — резервный способ открыть идею

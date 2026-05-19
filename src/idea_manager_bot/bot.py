@@ -27,6 +27,7 @@ from telegram.ext import (
     filters,
 )
 
+from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.config import Settings, load_settings
 from idea_manager_bot.context_loader import load_project_context
 from idea_manager_bot.exporter import SyncExporter
@@ -46,6 +47,7 @@ MENU_NEW_IDEA = "Новая идея"
 MENU_NEW_CONTEXT = "Новый контекст"
 MENU_LIST_IDEAS = "Список идей"
 MENU_LIST_CONTEXT = "Список контекста"
+MENU_BONDS = "Облигации"
 MENU_PROJECTS = "Разделы"
 MENU_CANCEL = "Отмена"
 
@@ -58,6 +60,7 @@ class IdeaManagerApp:
         self.llm = LLMService(settings.openai_api_key, settings.openai_model)
         self.link_reader = LinkReader()
         self.exporter = SyncExporter(settings)
+        self.bond_radar = BondRadarBridge.from_workspace(settings.workspace_root)
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self._reset_flow(context)
@@ -78,10 +81,16 @@ class IdeaManagerApp:
             f"`{MENU_NEW_IDEA}`: выбери раздел и отправь идею.\n"
             f"`{MENU_NEW_CONTEXT}`: выбери раздел и отправь полезный материал без обсуждения.\n"
             f"`{MENU_LIST_IDEAS}`: открыть список идей кнопками.\n"
-            f"`{MENU_LIST_CONTEXT}`: открыть список контекста кнопками.",
+            f"`{MENU_LIST_CONTEXT}`: открыть список контекста кнопками.\n"
+            f"`{MENU_BONDS}`: открыть Bond Radar.",
             parse_mode="Markdown",
             reply_markup=self._main_menu(),
         )
+
+    async def bonds_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        await self._send_bond_screen(update.message, "bond:home")
 
     async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
@@ -181,6 +190,10 @@ class IdeaManagerApp:
             )
             return
 
+        if text == MENU_BONDS:
+            await self._send_bond_screen(update.message, "bond:home")
+            return
+
         if text == MENU_PROJECTS:
             await self.projects_command(update, context)
             return
@@ -199,6 +212,15 @@ class IdeaManagerApp:
         await query.answer()
 
         data = query.data or ""
+        if data == "main:home":
+            self._reset_flow(context)
+            await query.message.reply_text("Главное меню.", reply_markup=self._main_menu())
+            return
+
+        if data.startswith("bond:"):
+            await self._send_bond_screen(query.message, data)
+            return
+
         if ":" not in data:
             return
         action, value = data.split(":", 1)
@@ -758,6 +780,7 @@ class IdeaManagerApp:
             MENU_NEW_CONTEXT.lower(),
             MENU_LIST_IDEAS.lower(),
             MENU_LIST_CONTEXT.lower(),
+            MENU_BONDS.lower(),
             MENU_PROJECTS.lower(),
             MENU_CANCEL.lower(),
         }
@@ -827,6 +850,13 @@ class IdeaManagerApp:
             return "Без названия"
         return title[:60]
 
+    async def _send_bond_screen(self, message: Message, action: str) -> None:
+        screen = self.bond_radar.handle_action(action)
+        await message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+        )
+
     def _project_selector(self, action: str, include_all: bool = False) -> InlineKeyboardMarkup:
         keyboard = [
             [InlineKeyboardButton(project.label, callback_data=f"{action}:{project.key}")]
@@ -863,7 +893,8 @@ class IdeaManagerApp:
             [
                 [KeyboardButton(MENU_NEW_IDEA), KeyboardButton(MENU_NEW_CONTEXT)],
                 [KeyboardButton(MENU_LIST_IDEAS), KeyboardButton(MENU_LIST_CONTEXT)],
-                [KeyboardButton(MENU_PROJECTS), KeyboardButton(MENU_CANCEL)],
+                [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_PROJECTS)],
+                [KeyboardButton(MENU_CANCEL)],
             ],
             resize_keyboard=True,
         )
@@ -889,6 +920,7 @@ async def post_init(application: Application) -> None:
         BotCommand("menu", "Открыть меню"),
         BotCommand("help", "Подсказка"),
         BotCommand("myid", "Показать chat_id"),
+        BotCommand("bonds", "Открыть Bond Radar"),
         BotCommand("projects", "Список разделов"),
         BotCommand("list", "Список идей"),
         BotCommand("show", "Показать идею по ID"),
@@ -905,6 +937,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("menu", app_logic.menu_command))
     application.add_handler(CommandHandler("help", app_logic.help_command))
     application.add_handler(CommandHandler("myid", app_logic.myid_command))
+    application.add_handler(CommandHandler("bonds", app_logic.bonds_command))
     application.add_handler(CommandHandler("projects", app_logic.projects_command))
     application.add_handler(CommandHandler("list", app_logic.list_command))
     application.add_handler(CommandHandler("show", app_logic.show_command))
