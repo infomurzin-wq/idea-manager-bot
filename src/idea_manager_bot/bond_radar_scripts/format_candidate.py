@@ -136,23 +136,40 @@ def format_candidate_message(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_candidate_list_message(records: list[dict[str, Any]], *, status: str, limit: int = 30) -> str:
+def format_candidate_list_message(
+    records: list[dict[str, Any]],
+    *,
+    status: str,
+    limit: int = 30,
+    total_count: int | None = None,
+    offset: int = 0,
+    page: int | None = None,
+    page_count: int | None = None,
+) -> str:
     title = {
         "new": "Новые кандидаты",
         "watchlist": "Watchlist",
         "rejected": "Отклоненные",
     }.get(status, "Кандидаты")
+    total = len(records) if total_count is None else total_count
     visible = records[:limit]
-    lines = [f"{title}: {len(records)}", ""]
+    lines = [f"{title}: {total}"]
+    if page is not None and page_count is not None and page_count > 1:
+        lines.append(f"Страница {page}/{page_count}")
+    lines.append("")
 
     if not visible:
         lines.append("Список пуст.")
         return "\n".join(lines)
 
-    for index, record in enumerate(visible, start=1):
+    for index, record in enumerate(visible, start=offset + 1):
         lines.extend(format_candidate_list_item(index, record))
 
-    if len(records) > limit:
+    if total_count is not None and total > len(visible):
+        first = offset + 1
+        last = offset + len(visible)
+        lines.extend(["", f"Показано {first}-{last} из {total}."])
+    elif len(records) > limit:
         lines.extend(["", f"Показано {limit} из {len(records)}."])
 
     return "\n".join(lines).rstrip()

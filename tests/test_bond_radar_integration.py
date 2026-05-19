@@ -231,6 +231,26 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Карточка удалена:", deleted_screen["text"])
             self.assertEqual(24, len(records))
 
+    def test_list_pagination_keeps_card_back_navigation_to_same_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            bridge.handle_action("bond:home")
+
+            page_screen = bridge.handle_action("bond:list:new:2")
+            show_callback = page_screen["buttons"][1][0]["callback_data"]
+
+            self.assertIn("Страница 2/3", page_screen["text"])
+            self.assertIn("Показано 11-20 из 25.", page_screen["text"])
+            self.assertTrue(show_callback.startswith("bond:show:new~2:"))
+
+            detail_screen = bridge.handle_action(show_callback)
+
+            self.assertIn({"text": "Назад", "callback_data": "bond:list:new:2"}, detail_screen["buttons"][-1])
+
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(
             [[{"text": "Новые кандидаты", "callback_data": "bond:list:new"}]]

@@ -21,6 +21,7 @@ STATUS_ACTIONS = {
     "bond:list:watchlist": "watchlist",
     "bond:list:rejected": "rejected",
 }
+PAGE_SIZE = 10
 
 
 def main() -> None:
@@ -45,8 +46,10 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
     if action == ACTION_HOME:
         return home_screen(records)
 
-    if action in STATUS_ACTIONS:
-        return list_screen(records, STATUS_ACTIONS[action])
+    parsed_list_action = parse_list_action(action)
+    if parsed_list_action is not None:
+        status, page = parsed_list_action
+        return list_screen(records, status, page=page)
 
     if action == ACTION_ADD_MANUAL:
         return {
@@ -59,12 +62,12 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         }
 
     if action.startswith("bond:show:"):
-        origin_status, value = parse_origin_and_key(action.removeprefix("bond:show:"))
+        origin, value = parse_origin_and_key(action.removeprefix("bond:show:"))
         key = resolve_action_key(records, value)
-        return show_screen(records, key, origin_status=origin_status)
+        return show_screen(records, key, origin=origin)
 
     if action.startswith("bond:watch:"):
-        origin_status, value = parse_origin_and_key(action.removeprefix("bond:watch:"))
+        origin, value = parse_origin_and_key(action.removeprefix("bond:watch:"))
         key = resolve_action_key(records, value)
         record = candidate_store.set_candidate_status(records, key, "watchlist")
         candidate_store.write_store(store_path, records)
@@ -72,11 +75,11 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
             records,
             record["storage"]["key"],
             prefix="Добавлено в Watchlist.",
-            origin_status=origin_status,
+            origin=origin,
         )
 
     if action.startswith("bond:reject:"):
-        origin_status, value = parse_origin_and_key(action.removeprefix("bond:reject:"))
+        origin, value = parse_origin_and_key(action.removeprefix("bond:reject:"))
         key = resolve_action_key(records, value)
         record = candidate_store.set_candidate_status(records, key, "rejected")
         candidate_store.write_store(store_path, records)
@@ -84,26 +87,26 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
             records,
             record["storage"]["key"],
             prefix="Кандидат отклонен.",
-            origin_status=origin_status,
+            origin=origin,
         )
 
     if action.startswith("bond:delete-confirm:"):
-        origin_status, value = parse_origin_and_key(action.removeprefix("bond:delete-confirm:"))
+        origin, value = parse_origin_and_key(action.removeprefix("bond:delete-confirm:"))
         key = resolve_action_key(records, value)
         record = candidate_store.get_candidate(records, key)
         title = format_candidate.format_title(record["candidate"]["instrument"])
-        back_status = origin_status if origin_status in candidate_store.VALID_STATUSES else record["storage"]["status"]
+        back_status, back_page = back_target(origin, record["storage"]["status"])
         candidate_store.delete_candidate(records, key)
         candidate_store.write_store(store_path, records)
-        screen = list_screen(records, back_status)
+        screen = list_screen(records, back_status, page=back_page)
         screen["text"] = f"Карточка удалена: {title}\n\n{screen['text']}"
         return screen
 
     if action.startswith("bond:delete:"):
-        origin_status, value = parse_origin_and_key(action.removeprefix("bond:delete:"))
+        origin, value = parse_origin_and_key(action.removeprefix("bond:delete:"))
         key = resolve_action_key(records, value)
         record = candidate_store.get_candidate(records, key)
-        return delete_confirm_screen(record, origin_status=origin_status)
+        return delete_confirm_screen(record, origin=origin)
 
     return {
         "text": f"Неизвестное действие: {action}",
@@ -132,12 +135,27 @@ def home_screen(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def list_screen(records: dict[str, dict[str, Any]], status: str) -> dict[str, Any]:
+def list_screen(records: dict[str, dict[str, Any]], status: str, *, page: int = 1) -> dict[str, Any]:
     items = candidate_store.list_candidates(records, status=status)
-    text = format_candidate.format_candidate_list_message(items, status=status)
-    buttons = list_candidate_buttons(items, origin_status=status)
+    page_count = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
+    current_page = min(max(1, page), page_count)
+    offset = (current_page - 1) * PAGE_SIZE
+    page_items = items[offset : offset + PAGE_SIZE]
+    text = format_candidate.format_candidate_list_message(
+        page_items,
+        status=status,
+        total_count=len(items),
+        offset=offset,
+        page=current_page,
+        page_count=page_count,
+    )
+    origin = origin_token(status, current_page)
+    buttons = list_candidate_buttons(page_items, origin=origin, start_index=offset + 1)
     if status == "new":
         buttons.insert(0, [button("Добавить вручную", ACTION_ADD_MANUAL)])
+    pagination = pagination_buttons(status, current_page, page_count)
+    if pagination:
+        buttons.append(pagination)
     buttons.extend([[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]])
     return {"text": text, "buttons": buttons}
 
@@ -147,44 +165,46 @@ def show_screen(
     key: str,
     *,
     prefix: str | None = None,
-    origin_status: str | None = None,
+    origin: str | None = None,
 ) -> dict[str, Any]:
     record = candidate_store.get_candidate(records, key)
     text = format_candidate.format_candidate_message(record)
     if prefix:
         text = f"{prefix}\n\n{text}"
-    return {"text": text, "buttons": detail_buttons(record, origin_status=origin_status)}
+    return {"text": text, "buttons": detail_buttons(record, origin=origin)}
 
 
-def detail_buttons(record: dict[str, Any], *, origin_status: str | None = None) -> list[list[dict[str, str]]]:
+def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list[list[dict[str, str]]]:
     key = record["storage"]["key"]
     short_id = short_callback_id(key)
     status = record["storage"]["status"]
-    back_status = origin_status if origin_status in candidate_store.VALID_STATUSES else status
+    back_status, back_page = back_target(origin, status)
+    encoded_origin = origin_token(back_status, back_page)
     rows: list[list[dict[str, str]]] = []
 
     if status == "new":
         rows.append(
             [
-                button("В watchlist", f"bond:watch:{back_status}:{short_id}"),
-                button("Отклонить", f"bond:reject:{back_status}:{short_id}"),
+                button("В watchlist", f"bond:watch:{encoded_origin}:{short_id}"),
+                button("Отклонить", f"bond:reject:{encoded_origin}:{short_id}"),
             ]
         )
     elif status == "watchlist":
-        rows.append([button("Отклонить", f"bond:reject:{back_status}:{short_id}")])
+        rows.append([button("Отклонить", f"bond:reject:{encoded_origin}:{short_id}")])
     elif status == "rejected":
-        rows.append([button("В watchlist", f"bond:watch:{back_status}:{short_id}")])
-        rows.append([button("Удалить", f"bond:delete:{back_status}:{short_id}")])
+        rows.append([button("В watchlist", f"bond:watch:{encoded_origin}:{short_id}")])
+        rows.append([button("Удалить", f"bond:delete:{encoded_origin}:{short_id}")])
 
-    rows.append([button("Назад", f"bond:list:{back_status}"), button("Главное меню", ACTION_MAIN_MENU)])
+    rows.append([button("Назад", list_action(back_status, back_page)), button("Главное меню", ACTION_MAIN_MENU)])
     return rows
 
 
-def delete_confirm_screen(record: dict[str, Any], *, origin_status: str | None = None) -> dict[str, Any]:
+def delete_confirm_screen(record: dict[str, Any], *, origin: str | None = None) -> dict[str, Any]:
     key = record["storage"]["key"]
     short_id = short_callback_id(key)
     status = record["storage"]["status"]
-    back_status = origin_status if origin_status in candidate_store.VALID_STATUSES else status
+    back_status, back_page = back_target(origin, status)
+    encoded_origin = origin_token(back_status, back_page)
     title = format_candidate.format_title(record["candidate"]["instrument"])
     return {
         "text": (
@@ -193,8 +213,8 @@ def delete_confirm_screen(record: dict[str, Any], *, origin_status: str | None =
             "Используй его только для ошибочных импортов."
         ),
         "buttons": [
-            [button("Удалить навсегда", f"bond:delete-confirm:{back_status}:{short_id}")],
-            [button("Назад", f"bond:show:{back_status}:{short_id}"), button("Главное меню", ACTION_MAIN_MENU)],
+            [button("Удалить навсегда", f"bond:delete-confirm:{encoded_origin}:{short_id}")],
+            [button("Назад", f"bond:show:{encoded_origin}:{short_id}"), button("Главное меню", ACTION_MAIN_MENU)],
         ],
     }
 
@@ -202,13 +222,13 @@ def delete_confirm_screen(record: dict[str, Any], *, origin_status: str | None =
 def list_candidate_buttons(
     records: list[dict[str, Any]],
     *,
-    origin_status: str,
-    limit: int = 30,
+    origin: str,
+    start_index: int = 1,
 ) -> list[list[dict[str, str]]]:
     rows: list[list[dict[str, str]]] = []
-    for index, record in enumerate(records[:limit], start=1):
+    for index, record in enumerate(records, start=start_index):
         title = candidate_button_title(index, record)
-        rows.append([button(title, f"bond:show:{origin_status}:{short_callback_id(record['storage']['key'])}")])
+        rows.append([button(title, f"bond:show:{origin}:{short_callback_id(record['storage']['key'])}")])
     return rows
 
 
@@ -237,9 +257,70 @@ def resolve_action_key(records: dict[str, dict[str, Any]], value: str) -> str:
 
 def parse_origin_and_key(value: str) -> tuple[str | None, str]:
     origin, separator, key = value.partition(":")
-    if separator and origin in candidate_store.VALID_STATUSES:
+    if separator and parse_origin_token(origin) is not None:
         return origin, key
     return None, value
+
+
+def parse_list_action(action: str) -> tuple[str, int] | None:
+    parts = action.split(":")
+    if len(parts) not in {3, 4} or parts[0] != "bond" or parts[1] != "list":
+        return None
+    status = parts[2]
+    if status not in candidate_store.VALID_STATUSES:
+        return None
+    if len(parts) == 3:
+        return status, 1
+    try:
+        page = int(parts[3])
+    except ValueError:
+        return status, 1
+    return status, max(1, page)
+
+
+def pagination_buttons(status: str, page: int, page_count: int) -> list[dict[str, str]]:
+    if page_count <= 1:
+        return []
+    row: list[dict[str, str]] = []
+    if page > 1:
+        row.append(button("← Назад", list_action(status, page - 1)))
+    if page < page_count:
+        row.append(button("Дальше →", list_action(status, page + 1)))
+    return row
+
+
+def list_action(status: str, page: int) -> str:
+    if page <= 1:
+        return f"bond:list:{status}"
+    return f"bond:list:{status}:{page}"
+
+
+def origin_token(status: str, page: int = 1) -> str:
+    if page <= 1:
+        return status
+    return f"{status}~{page}"
+
+
+def parse_origin_token(value: str | None) -> tuple[str, int] | None:
+    if not value:
+        return None
+    status, separator, raw_page = value.partition("~")
+    if status not in candidate_store.VALID_STATUSES:
+        return None
+    if not separator:
+        return status, 1
+    try:
+        page = int(raw_page)
+    except ValueError:
+        return status, 1
+    return status, max(1, page)
+
+
+def back_target(origin: str | None, fallback_status: str) -> tuple[str, int]:
+    parsed = parse_origin_token(origin)
+    if parsed is not None:
+        return parsed
+    return fallback_status, 1
 
 
 def short_callback_id(key: str) -> str:
