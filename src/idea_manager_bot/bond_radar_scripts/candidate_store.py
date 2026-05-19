@@ -28,7 +28,7 @@ class UpsertResult:
 
 def main() -> None:
     raw_args = sys.argv[1:]
-    if raw_args and raw_args[0] not in {"import", "set-status", "list", "show"}:
+    if raw_args and raw_args[0] not in {"import", "set-status", "delete", "list", "show"}:
         raw_args = ["import", *raw_args]
 
     parser = argparse.ArgumentParser(description="Persist and update deduplicated bond candidates.")
@@ -43,6 +43,10 @@ def main() -> None:
     status_parser.add_argument("key", help="storage.key, dedup key, ISIN key, or another matched candidate key.")
     status_parser.add_argument("status", choices=sorted(VALID_STATUSES), help="New lifecycle status.")
     status_parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="JSONL candidate store path.")
+
+    delete_parser = subparsers.add_parser("delete", help="Delete an existing candidate from the store.")
+    delete_parser.add_argument("key", help="storage.key, dedup key, ISIN key, or another matched candidate key.")
+    delete_parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="JSONL candidate store path.")
 
     list_parser = subparsers.add_parser("list", help="List candidates from the store.")
     list_parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="JSONL candidate store path.")
@@ -74,6 +78,23 @@ def main() -> None:
                     "status": record["storage"]["status"],
                     "store": str(args.store),
                     "updated_at": record["storage"]["updated_at"],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "delete":
+        records = load_store(args.store)
+        record = delete_candidate(records, args.key)
+        write_store(args.store, records)
+        print(
+            json.dumps(
+                {
+                    "deleted_key": record["storage"]["key"],
+                    "store_records": len(records),
+                    "store": str(args.store),
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -201,6 +222,13 @@ def get_candidate(records: dict[str, dict[str, Any]], lookup_key: str) -> dict[s
     if matched_key is None:
         raise KeyError(f"Candidate not found: {lookup_key}")
     return records[matched_key]
+
+
+def delete_candidate(records: dict[str, dict[str, Any]], lookup_key: str) -> dict[str, Any]:
+    matched_key = find_existing_record_key(records, lookup_key)
+    if matched_key is None:
+        raise KeyError(f"Candidate not found: {lookup_key}")
+    return records.pop(matched_key)
 
 
 def list_candidates(

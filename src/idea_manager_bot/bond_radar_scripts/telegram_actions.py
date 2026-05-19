@@ -87,6 +87,24 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
             origin_status=origin_status,
         )
 
+    if action.startswith("bond:delete-confirm:"):
+        origin_status, value = parse_origin_and_key(action.removeprefix("bond:delete-confirm:"))
+        key = resolve_action_key(records, value)
+        record = candidate_store.get_candidate(records, key)
+        title = format_candidate.format_title(record["candidate"]["instrument"])
+        back_status = origin_status if origin_status in candidate_store.VALID_STATUSES else record["storage"]["status"]
+        candidate_store.delete_candidate(records, key)
+        candidate_store.write_store(store_path, records)
+        screen = list_screen(records, back_status)
+        screen["text"] = f"Карточка удалена: {title}\n\n{screen['text']}"
+        return screen
+
+    if action.startswith("bond:delete:"):
+        origin_status, value = parse_origin_and_key(action.removeprefix("bond:delete:"))
+        key = resolve_action_key(records, value)
+        record = candidate_store.get_candidate(records, key)
+        return delete_confirm_screen(record, origin_status=origin_status)
+
     return {
         "text": f"Неизвестное действие: {action}",
         "buttons": [[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]],
@@ -156,9 +174,29 @@ def detail_buttons(record: dict[str, Any], *, origin_status: str | None = None) 
         rows.append([button("Отклонить", f"bond:reject:{back_status}:{short_id}")])
     elif status == "rejected":
         rows.append([button("В watchlist", f"bond:watch:{back_status}:{short_id}")])
+        rows.append([button("Удалить", f"bond:delete:{back_status}:{short_id}")])
 
     rows.append([button("Назад", f"bond:list:{back_status}"), button("Главное меню", ACTION_MAIN_MENU)])
     return rows
+
+
+def delete_confirm_screen(record: dict[str, Any], *, origin_status: str | None = None) -> dict[str, Any]:
+    key = record["storage"]["key"]
+    short_id = short_callback_id(key)
+    status = record["storage"]["status"]
+    back_status = origin_status if origin_status in candidate_store.VALID_STATUSES else status
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    return {
+        "text": (
+            f"Удалить карточку: {title}?\n\n"
+            "Это действие уберет запись из Bond Radar store. "
+            "Используй его только для ошибочных импортов."
+        ),
+        "buttons": [
+            [button("Удалить навсегда", f"bond:delete-confirm:{back_status}:{short_id}")],
+            [button("Назад", f"bond:show:{back_status}:{short_id}"), button("Главное меню", ACTION_MAIN_MENU)],
+        ],
+    }
 
 
 def list_candidate_buttons(

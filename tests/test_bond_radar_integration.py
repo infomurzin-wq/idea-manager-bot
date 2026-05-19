@@ -198,6 +198,39 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Статус: отклонен", rejected_screen["text"])
             self.assertIn({"text": "Назад", "callback_data": "bond:list:watchlist"}, rejected_screen["buttons"][-1])
 
+    def test_delete_rejected_candidate_requires_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            bridge.handle_action("bond:home")
+
+            telegram_actions = bridge._import_from_scripts_dir("telegram_actions")
+            candidate_store = bridge._import_from_scripts_dir("candidate_store")
+            records = candidate_store.load_store(store_path)
+            key = next(
+                key
+                for key, record in records.items()
+                if record["storage"]["status"] == "new"
+            )
+            short_id = telegram_actions.short_callback_id(key)
+
+            bridge.handle_action(f"bond:reject:{short_id}")
+            confirm_screen = bridge.handle_action(f"bond:delete:rejected:{short_id}")
+            self.assertIn("Удалить карточку:", confirm_screen["text"])
+            self.assertIn(
+                {"text": "Удалить навсегда", "callback_data": f"bond:delete-confirm:rejected:{short_id}"},
+                confirm_screen["buttons"][0],
+            )
+
+            deleted_screen = bridge.handle_action(f"bond:delete-confirm:rejected:{short_id}")
+            records = candidate_store.load_store(store_path)
+
+            self.assertIn("Карточка удалена:", deleted_screen["text"])
+            self.assertEqual(24, len(records))
+
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(
             [[{"text": "Новые кандидаты", "callback_data": "bond:list:new"}]]
