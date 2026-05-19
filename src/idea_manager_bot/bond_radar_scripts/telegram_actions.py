@@ -254,7 +254,19 @@ def list_candidate_buttons(
 def candidate_button_title(index: int, record: dict[str, Any]) -> str:
     candidate = record["candidate"]
     title = format_candidate.format_title(candidate["instrument"])
-    return f"{index}. {title}"
+    instrument = candidate["instrument"]
+    terms = candidate["terms"]
+    rating = display_short(instrument.get("rating"))
+    ytm = display_short(terms.get("ytm_raw") or terms.get("ytm"))
+    coupon = display_short(terms.get("coupon_raw") or terms.get("coupon"))
+    rate = f"YTM {ytm}" if ytm != "н/д" else f"купон {coupon}"
+    return f"{index}. {title} | {rating} | {rate}"
+
+
+def display_short(value: Any) -> str:
+    if value is None or value == "" or value == []:
+        return "н/д"
+    return str(value)
 
 
 def count_by_status(records: dict[str, dict[str, Any]]) -> dict[str, int]:
