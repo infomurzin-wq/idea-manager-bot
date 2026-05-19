@@ -253,15 +253,21 @@ def list_candidate_buttons(
 
 def candidate_button_title(index: int, record: dict[str, Any]) -> str:
     candidate = record["candidate"]
-    title = format_candidate.format_title(candidate["instrument"])
+    title = compact_title(format_candidate.format_title(candidate["instrument"]))
     instrument = candidate["instrument"]
     terms = candidate["terms"]
     rating = display_short(instrument.get("rating"))
     ytm = display_short(terms.get("ytm_raw") or terms.get("ytm"))
     coupon = display_short(terms.get("coupon_raw") or terms.get("coupon"))
     maturity = maturity_short(terms.get("maturity_date"))
-    rate = f"YTM {ytm}" if ytm != "н/д" else f"купон {coupon}"
+    rate = ytm if ytm != "н/д" else coupon
     return f"{index}. {title} | {rating} | {rate} | {maturity}"
+
+
+def compact_title(value: str, *, limit: int = 24) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
 
 
 def display_short(value: Any) -> str:
@@ -272,11 +278,13 @@ def display_short(value: Any) -> str:
 
 def maturity_short(value: Any) -> str:
     if value is None or value == "" or value == []:
-        return "пог. н/д"
+        return "н/д"
     raw = str(value)
     if match := re.fullmatch(r"(\d+(?:\.\d+)?) years", raw):
-        return f"срок {match.group(1)} г."
-    return f"пог. {raw}"
+        return f"{match.group(1)}г"
+    if match := re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{4})", raw):
+        return f"{match.group(1)}.{match.group(2)}.{match.group(3)[2:]}"
+    return raw
 
 
 def count_by_status(records: dict[str, dict[str, Any]]) -> dict[str, int]:
