@@ -130,10 +130,17 @@ class BondRadarIntegrationTest(unittest.TestCase):
             )
 
             screen = bridge.import_manual_text(text)
+            callbacks = [
+                item["callback_data"]
+                for row in screen["buttons"]
+                for item in row
+            ]
 
             self.assertIn("Ручной импорт завершен", screen["text"])
             self.assertIn("Новых: 1", screen["text"])
             self.assertIn("Полипласт П02-БО-99", screen["text"])
+            self.assertTrue(any(callback.startswith("bond:show:") for callback in callbacks))
+            self.assertIn("bond:list:new", callbacks)
 
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(

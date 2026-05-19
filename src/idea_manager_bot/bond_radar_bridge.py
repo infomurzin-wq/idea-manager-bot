@@ -92,6 +92,7 @@ class BondRadarBridge:
             deduplicate_candidates = self._import_from_scripts_dir("deduplicate_candidates")
             candidate_store = self._import_from_scripts_dir("candidate_store")
             telegram_actions = self._import_from_scripts_dir("telegram_actions")
+            format_candidate = self._import_from_scripts_dir("format_candidate")
 
             now = datetime.now(UTC)
             post = extract_candidate.SourcePost(
@@ -104,19 +105,75 @@ class BondRadarBridge:
             cards = extract_candidate.extract_candidates(post)
             merged_cards = deduplicate_candidates.deduplicate_candidates(cards)
             records = candidate_store.load_store(self.store_path)
+            affected_keys = [
+                candidate_store.find_existing_key(records, candidate) or candidate_store.stable_key(candidate)
+                for candidate in merged_cards
+            ]
             result = candidate_store.upsert_candidates(records, merged_cards, new_status="new", now=now)
             candidate_store.write_store(self.store_path, records)
 
-            screen = telegram_actions.handle_action("bond:list:new", self.store_path)
-            prefix = (
-                "Ручной импорт завершен.\n"
-                f"Найдено карточек: {len(cards)}\n"
-                f"Новых: {result.inserted}, обновлено: {result.updated}, без изменений: {result.unchanged}\n\n"
+            return self._manual_import_result_screen(
+                records=records,
+                affected_keys=affected_keys,
+                card_count=len(cards),
+                inserted=result.inserted,
+                updated=result.updated,
+                unchanged=result.unchanged,
+                telegram_actions=telegram_actions,
+                candidate_store=candidate_store,
+                format_candidate=format_candidate,
             )
-            screen["text"] = prefix + screen["text"]
-            return screen
         except Exception as exc:  # noqa: BLE001
             return self._unavailable_screen(f"Не удалось разобрать текст облигации: {exc}")
+
+    @staticmethod
+    def _manual_import_result_screen(
+        *,
+        records: dict[str, dict[str, Any]],
+        affected_keys: list[str],
+        card_count: int,
+        inserted: int,
+        updated: int,
+        unchanged: int,
+        telegram_actions: Any,
+        candidate_store: Any,
+        format_candidate: Any,
+    ) -> dict[str, Any]:
+        lines = [
+            "Ручной импорт завершен.",
+            f"Найдено карточек: {card_count}",
+            f"Новых: {inserted}, обновлено: {updated}, без изменений: {unchanged}",
+            "",
+        ]
+
+        buttons: list[list[dict[str, str]]] = []
+        if affected_keys:
+            lines.append("Добавленные/обновленные карточки:")
+            for index, key in enumerate(affected_keys[:10], start=1):
+                record = candidate_store.get_candidate(records, key)
+                title = format_candidate.format_title(record["candidate"]["instrument"])
+                status = record["storage"]["status"]
+                lines.append(f"{index}. {title} ({status})")
+                short_id = telegram_actions.short_callback_id(record["storage"]["key"])
+                buttons.append(
+                    [
+                        {
+                            "text": f"Открыть: {title[:45]}",
+                            "callback_data": f"bond:show:{short_id}",
+                        }
+                    ]
+                )
+        else:
+            lines.append("Карточки не найдены. Пришли текст с эмитентом, купоном, сроком или датой размещения.")
+
+        buttons.extend(
+            [
+                [{"text": "Новые кандидаты", "callback_data": "bond:list:new"}],
+                [{"text": "К облигациям", "callback_data": "bond:home"}],
+                [{"text": "Главное меню", "callback_data": "main:home"}],
+            ]
+        )
+        return {"text": "\n".join(lines), "buttons": buttons}
 
     def _ensure_store_exists(self) -> None:
         if self.store_path.exists():
