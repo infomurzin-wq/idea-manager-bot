@@ -217,6 +217,15 @@ class IdeaManagerApp:
             await query.message.reply_text("Главное меню.", reply_markup=self._main_menu())
             return
 
+        if data == "bond:add:manual":
+            context.user_data["pending_action"] = "bond_manual_import"
+            await query.message.reply_text(
+                "Отправь следующим сообщением текст поста или параметры выпуска облигации. "
+                "Я попробую извлечь карточку и добавлю ее в Новые кандидаты.",
+                reply_markup=self._main_menu(),
+            )
+            return
+
         if data.startswith("bond:"):
             await self._send_bond_screen(query.message, data)
             return
@@ -291,7 +300,7 @@ class IdeaManagerApp:
             return
 
         pending_action = context.user_data.get("pending_action")
-        if pending_action not in {"idea", "context", "comment", "append_context_text"}:
+        if pending_action not in {"idea", "context", "comment", "append_context_text", "bond_manual_import"}:
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
                 return
@@ -307,6 +316,16 @@ class IdeaManagerApp:
             return
 
         try:
+            if pending_action == "bond_manual_import":
+                text = payload["normalized_text"] or payload["raw_input"]
+                screen = await asyncio.to_thread(self.bond_radar.import_manual_text, text)
+                self._reset_flow(context)
+                await update.message.reply_text(
+                    screen["text"][:4000],
+                    reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+                )
+                return
+
             if pending_action == "idea":
                 project_key = context.user_data.get("pending_project")
                 if project_key not in self.registry:

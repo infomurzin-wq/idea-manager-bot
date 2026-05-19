@@ -15,6 +15,7 @@ import format_candidate
 
 ACTION_HOME = "bond:home"
 ACTION_MAIN_MENU = "main:home"
+ACTION_ADD_MANUAL = "bond:add:manual"
 STATUS_ACTIONS = {
     "bond:list:new": "new",
     "bond:list:watchlist": "watchlist",
@@ -46,6 +47,16 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
 
     if action in STATUS_ACTIONS:
         return list_screen(records, STATUS_ACTIONS[action])
+
+    if action == ACTION_ADD_MANUAL:
+        return {
+            "text": (
+                "Добавить кандидата вручную\n\n"
+                "Отправь следующим сообщением текст поста или параметры выпуска. "
+                "Бот попробует извлечь карточку и добавить ее в Новые кандидаты."
+            ),
+            "buttons": [[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]],
+        }
 
     if action.startswith("bond:show:"):
         key = resolve_action_key(records, action.removeprefix("bond:show:"))
@@ -82,6 +93,7 @@ def home_screen(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "text": text,
         "buttons": [
             [button(f"Новые кандидаты ({counts['new']})", "bond:list:new")],
+            [button("Добавить вручную", ACTION_ADD_MANUAL)],
             [button(f"Watchlist ({counts['watchlist']})", "bond:list:watchlist")],
             [button(f"Отклоненные ({counts['rejected']})", "bond:list:rejected")],
             [button("Главное меню", ACTION_MAIN_MENU)],
@@ -93,6 +105,8 @@ def list_screen(records: dict[str, dict[str, Any]], status: str) -> dict[str, An
     items = candidate_store.list_candidates(records, status=status)
     text = format_candidate.format_candidate_list_message(items, status=status)
     buttons = list_candidate_buttons(items)
+    if status == "new":
+        buttons.insert(0, [button("Добавить вручную", ACTION_ADD_MANUAL)])
     buttons.extend([[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]])
     return {"text": text, "buttons": buttons}
 

@@ -97,6 +97,44 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Новые кандидаты: 25", screen["text"])
             self.assertEqual(25, len(store_path.read_text(encoding="utf-8").splitlines()))
 
+    def test_home_screen_has_manual_add_button(self) -> None:
+        bridge = BondRadarBridge(
+            scripts_dir=BOND_RADAR_PROJECT / "scripts",
+            store_path=BOND_RADAR_STORE,
+        )
+
+        screen = bridge.handle_action("bond:home")
+        callbacks = [
+            item["callback_data"]
+            for row in screen["buttons"]
+            for item in row
+        ]
+
+        self.assertIn("bond:add:manual", callbacks)
+
+    def test_bridge_imports_manual_text_into_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            text = (
+                "Полипласт П02-БО-99 (А)\n"
+                "Купон: 18%\n"
+                "YTM: 19,5%\n"
+                "Выплаты: 12 раз в год\n"
+                "Срок: 3 года\n"
+                "Сбор заявок до: 25 мая\n"
+                "Размещение: 28 мая 2026\n"
+            )
+
+            screen = bridge.import_manual_text(text)
+
+            self.assertIn("Ручной импорт завершен", screen["text"])
+            self.assertIn("Новых: 1", screen["text"])
+            self.assertIn("Полипласт П02-БО-99", screen["text"])
+
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(
             [[{"text": "Новые кандидаты", "callback_data": "bond:list:new"}]]

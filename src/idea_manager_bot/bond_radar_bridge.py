@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +72,51 @@ class BondRadarBridge:
             return telegram_actions.handle_action(action, self.store_path)
         except Exception as exc:  # noqa: BLE001
             return self._unavailable_screen(f"Bond Radar временно недоступен: {exc}")
+
+    def import_manual_text(
+        self,
+        text: str,
+        *,
+        source_channel: str = "manual",
+        source_url: str | None = None,
+    ) -> dict[str, Any]:
+        if not text.strip():
+            return {
+                "text": "Не получил текст для разбора.",
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+
+        try:
+            self._ensure_store_exists()
+            extract_candidate = self._import_from_scripts_dir("extract_candidate")
+            deduplicate_candidates = self._import_from_scripts_dir("deduplicate_candidates")
+            candidate_store = self._import_from_scripts_dir("candidate_store")
+            telegram_actions = self._import_from_scripts_dir("telegram_actions")
+
+            now = datetime.now(UTC)
+            post = extract_candidate.SourcePost(
+                post_id=f"manual-{now.strftime('%Y%m%d%H%M%S')}",
+                channel=source_channel,
+                url=source_url,
+                post_date=now.date().isoformat(),
+                text=text.strip(),
+            )
+            cards = extract_candidate.extract_candidates(post)
+            merged_cards = deduplicate_candidates.deduplicate_candidates(cards)
+            records = candidate_store.load_store(self.store_path)
+            result = candidate_store.upsert_candidates(records, merged_cards, new_status="new", now=now)
+            candidate_store.write_store(self.store_path, records)
+
+            screen = telegram_actions.handle_action("bond:list:new", self.store_path)
+            prefix = (
+                "Ручной импорт завершен.\n"
+                f"Найдено карточек: {len(cards)}\n"
+                f"Новых: {result.inserted}, обновлено: {result.updated}, без изменений: {result.unchanged}\n\n"
+            )
+            screen["text"] = prefix + screen["text"]
+            return screen
+        except Exception as exc:  # noqa: BLE001
+            return self._unavailable_screen(f"Не удалось разобрать текст облигации: {exc}")
 
     def _ensure_store_exists(self) -> None:
         if self.store_path.exists():

@@ -118,6 +118,7 @@ idea-manager-bot/
 - `BondRadarBridge` передаёт действие в `learning-programming/04_projects/bond-radar-bot/scripts/telegram_actions.py`;
 - Bond Radar возвращает экран в формате `text + buttons`;
 - общий бот только отправляет сообщение и inline-кнопки.
+- кнопка `Добавить вручную` принимает текст поста, прогоняет extractor/dedup и добавляет найденные карточки в `Новые кандидаты`.
 
 Так бизнес-логика облигаций не смешивается с логикой идей и контекста.
 
