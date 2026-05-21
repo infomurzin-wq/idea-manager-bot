@@ -258,7 +258,10 @@ def split_candidate_blocks(text: str) -> list[CandidateBlock]:
             if (
                 previous_index >= 0
                 and previous_index not in used
-                and is_title_context_paragraph(paragraphs[previous_index])
+                and (
+                    is_title_context_paragraph(paragraphs[previous_index])
+                    or is_market_return_context_paragraph(paragraphs[previous_index])
+                )
             ):
                 block_parts.append(paragraphs[previous_index])
                 used.add(previous_index)
@@ -344,6 +347,11 @@ def is_title_context_paragraph(paragraph: str) -> bool:
     if any(marker in lowered for marker in ("купон", "доходность", "ytm", "текущая цена", "дата погашения")):
         return False
     return bool(extract_isin(cleaned) or re.search(r"\b\d{3}[РP]-\d+\b", normalize_for_codes(cleaned), re.IGNORECASE))
+
+
+def is_market_return_context_paragraph(paragraph: str) -> bool:
+    lowered = paragraph.lower()
+    return "/" in paragraph and "рынок облигац" in lowered and "возвращается" in lowered
 
 
 def is_supporting_terms_paragraph(candidate: str, anchor: str) -> bool:
@@ -747,6 +755,15 @@ def extract_issuer(text: str) -> str | None:
     if quoted:
         return clean_name(quoted.group(1))
 
+    market_return = re.search(
+        r"(?:^|\n)[^\n#]*?([А-ЯЁ][А-Яа-яЁё0-9 .\"«»()/-]+?)\s*/\s*[^\n]+?"
+        r"\s+возвращается\s+на\s+рынок\s+облигац",
+        text,
+        re.IGNORECASE,
+    )
+    if market_return:
+        return clean_name(market_return.group(1))
+
     first_line = first_meaningful_line(text)
     if first_line and looks_like_title(first_line):
         return clean_name(strip_issue_name(first_line))
@@ -771,9 +788,16 @@ def extract_issuer(text: str) -> str | None:
 def first_meaningful_line(text: str) -> str | None:
     for line in text.splitlines():
         cleaned = line.strip(" -•●\t")
-        if cleaned and not re.match(r"^(рейтинг|isin|ytm|стоимость|купон|дата|срок|объем|объём|выплаты)\b", cleaned, re.IGNORECASE):
+        if not cleaned or is_hashtag_line(cleaned):
+            continue
+        if not re.match(r"^(рейтинг|isin|ytm|стоимость|купон|дата|срок|объем|объём|выплаты)\b", cleaned, re.IGNORECASE):
             return trim_title_line(cleaned)
     return None
+
+
+def is_hashtag_line(value: str) -> bool:
+    normalized = re.sub(r"\s+", " ", value).strip()
+    return bool(normalized) and all(part.startswith("#") for part in normalized.split())
 
 
 def trim_title_line(value: str) -> str:
