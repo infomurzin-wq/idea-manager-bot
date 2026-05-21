@@ -12,8 +12,8 @@ PORTFOLIO_SORTS = {
     "maturity_desc",
     "rating_desc",
     "rating_asc",
-    "yield_desc",
-    "yield_asc",
+    "coupon_desc",
+    "coupon_asc",
     "sum_desc",
     "sum_asc",
 }
@@ -50,7 +50,7 @@ def render_portfolio_screen(snapshot: dict[str, Any], *, sort: str = DEFAULT_POR
                 button("Рейтинг", next_portfolio_sort("rating", normalized_sort)),
             ],
             [
-                button("Доходность", next_portfolio_sort("yield", normalized_sort)),
+                button("Ставка", next_portfolio_sort("coupon", normalized_sort)),
                 button("Сумма", next_portfolio_sort("sum", normalized_sort)),
             ],
             [button("Обновить", normalized_sort)],
@@ -64,14 +64,14 @@ def format_position(index: int, item: dict[str, Any]) -> list[str]:
     isin = item.get("isin") or "ISIN н/д"
     quantity = display_number(item.get("quantity"))
     position_sum = display_money(item.get("position_sum"), item.get("currency"))
-    expected_yield = display_money(item.get("expected_yield"), item.get("currency"))
-    maturity = item.get("maturity_date") or "н/д"
+    coupon_rate = display_percent(item.get("coupon_rate"))
+    maturity = display_date(item.get("maturity_date"))
     rating = item.get("rating") or "н/д"
     return [
         f"{index}. {name}",
         f"   ISIN: {isin}",
         f"   Кол-во: {quantity} | Сумма: {position_sum}",
-        f"   Доходность позиции: {expected_yield} | Погашение: {maturity} | Рейтинг: {rating}",
+        f"   Ставка: {coupon_rate} | Погашение: {maturity} | Рейтинг: {rating}",
         "",
     ]
 
@@ -83,7 +83,7 @@ def sort_positions(positions: list[dict[str, Any]], sort: str) -> list[dict[str,
     key_functions = {
         "maturity": maturity_sort_value,
         "rating": rating_sort_value,
-        "yield": lambda item: numeric_sort_value(item.get("expected_yield")),
+        "coupon": lambda item: numeric_sort_value(item.get("coupon_rate")),
         "sum": lambda item: numeric_sort_value(item.get("position_sum")),
     }
     known: list[tuple[float, str, dict[str, Any]]] = []
@@ -101,6 +101,10 @@ def sort_positions(positions: list[dict[str, Any]], sort: str) -> list[dict[str,
 
 
 def normalize_portfolio_sort(sort: str | None) -> str:
+    if sort == "yield_desc":
+        return "coupon_desc"
+    if sort == "yield_asc":
+        return "coupon_asc"
     if sort in PORTFOLIO_SORTS:
         return sort
     return DEFAULT_PORTFOLIO_SORT
@@ -123,8 +127,8 @@ def portfolio_sort_label(sort: str) -> str:
         "maturity_desc": "погашение дальше",
         "rating_desc": "рейтинг выше",
         "rating_asc": "рейтинг ниже",
-        "yield_desc": "доходность позиции больше",
-        "yield_asc": "доходность позиции меньше",
+        "coupon_desc": "ставка купона больше",
+        "coupon_asc": "ставка купона меньше",
         "sum_desc": "сумма позиции больше",
         "sum_asc": "сумма позиции меньше",
     }
@@ -191,6 +195,24 @@ def display_money(value: Any, currency: str | None) -> str:
         return "н/д"
     suffix = f" {currency}" if currency else ""
     return f"{number:,.2f}".replace(",", " ") + suffix
+
+
+def display_percent(value: Any) -> str:
+    number = numeric_sort_value(value)
+    if number is None:
+        return "н/д"
+    return f"{number:.2f}%"
+
+
+def display_date(value: Any) -> str:
+    if not value:
+        return "н/д"
+    text = str(value)
+    try:
+        parsed = date.fromisoformat(text[:10])
+        return parsed.strftime("%d.%m.%Y")
+    except ValueError:
+        return text
 
 
 def button(text: str, sort: str) -> dict[str, str]:

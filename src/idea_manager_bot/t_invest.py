@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -78,6 +78,7 @@ class TInvestClient:
             "position_sum": position_sum,
             "currency": money_currency(item.get("currentPrice") or item.get("current_price")) or bond.get("currency"),
             "maturity_date": normalize_date(bond.get("maturityDate") or bond.get("maturity_date")),
+            "coupon_rate": self._fetch_coupon_rate(item, bond),
             "rating": None,
         }
 
@@ -87,6 +88,37 @@ class TInvestClient:
             {"idType": "INSTRUMENT_ID_TYPE_UID", "id": instrument_uid},
         )
         return response.get("instrument", {}) or {}
+
+    def _fetch_coupon_rate(self, item: dict[str, Any], bond: dict[str, Any]) -> float | None:
+        nominal = money_to_float(bond.get("nominal"))
+        if not nominal:
+            return None
+        try:
+            response = self._post(
+                "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetBondCoupons",
+                {
+                    "figi": item.get("figi") or bond.get("figi"),
+                    "from": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "to": (datetime.now(UTC) + timedelta(days=370)).isoformat(timespec="seconds"),
+                },
+            )
+        except httpx.HTTPError:
+            return None
+
+        coupons = response.get("events", []) or response.get("coupons", [])
+        if not coupons:
+            return None
+        coupon = coupons[0]
+        coupon_payment = money_to_float(coupon.get("payOneBond") or coupon.get("pay_one_bond"))
+        if coupon_payment is None:
+            return None
+        days = coupon_period_days(coupon)
+        if days:
+            return coupon_payment / nominal * (365 / days) * 100
+        frequency = quotation_to_float(bond.get("couponQuantityPerYear") or bond.get("coupon_quantity_per_year"))
+        if frequency:
+            return coupon_payment / nominal * frequency * 100
+        return None
 
     @staticmethod
     def _is_bond_position(item: dict[str, Any]) -> bool:
@@ -136,3 +168,22 @@ def normalize_date(value: Any) -> str | None:
     if "T" in text:
         return text.split("T", 1)[0]
     return text[:10] if len(text) >= 10 else text
+
+
+def coupon_period_days(coupon: dict[str, Any]) -> int | None:
+    start = parse_datetime(coupon.get("couponStartDate") or coupon.get("coupon_start_date"))
+    end = parse_datetime(coupon.get("couponEndDate") or coupon.get("coupon_end_date"))
+    if start and end:
+        days = (end.date() - start.date()).days
+        return days if days > 0 else None
+    return None
+
+
+def parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None

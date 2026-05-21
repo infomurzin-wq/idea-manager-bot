@@ -13,6 +13,7 @@ from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS
 from idea_manager_bot.config import Settings
 from idea_manager_bot.link_reader import LinkReader
+from idea_manager_bot.t_invest import TInvestClient
 
 
 MYCODEX_ROOT = Path(__file__).resolve().parents[2]
@@ -510,8 +511,8 @@ class BondRadarIntegrationTest(unittest.TestCase):
             "fetched_at": "2026-05-21T12:00:00+00:00",
             "account_id": "account-1",
             "positions": [
-                {"name": "Small Bond", "isin": "RU1", "quantity": 1, "position_sum": 100.0, "expected_yield": 5.0, "maturity_date": "2028-01-01", "currency": "rub"},
-                {"name": "Large Bond", "isin": "RU2", "quantity": 2, "position_sum": 500.0, "expected_yield": 10.0, "maturity_date": "2027-01-01", "currency": "rub"},
+                {"name": "Small Bond", "isin": "RU1", "quantity": 1, "position_sum": 100.0, "coupon_rate": 5.0, "maturity_date": "2028-01-01", "currency": "rub"},
+                {"name": "Large Bond", "isin": "RU2", "quantity": 2, "position_sum": 500.0, "coupon_rate": 10.0, "maturity_date": "2027-01-01", "currency": "rub"},
             ],
         }
 
@@ -519,15 +520,18 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn("Портфель облигаций", screen["text"])
         self.assertLess(screen["text"].index("Large Bond"), screen["text"].index("Small Bond"))
+        self.assertIn("Ставка: 10.00%", screen["text"])
+        self.assertIn("Погашение: 01.01.2027", screen["text"])
         callbacks = [item["callback_data"] for row in screen["buttons"] for item in row]
         self.assertIn("bond:portfolio:maturity_asc", callbacks)
+        self.assertIn("bond:portfolio:coupon_desc", callbacks)
         self.assertIn("bond:portfolio:sum_asc", callbacks)
 
     def test_build_portfolio_screen_refreshes_snapshot_each_time(self) -> None:
         app = IdeaManagerApp(make_settings(t_invest_token="token", t_invest_account_id="account-1"))
         app.t_invest = FakeTInvestClient()
 
-        screen = app._build_bond_portfolio_screen("bond:portfolio:yield_desc")
+        screen = app._build_bond_portfolio_screen("bond:portfolio:coupon_desc")
 
         self.assertEqual(1, app.t_invest.calls)
         self.assertIn("Портфель облигаций", screen["text"])
@@ -540,6 +544,21 @@ class BondRadarIntegrationTest(unittest.TestCase):
         screen = app._build_bond_portfolio_screen("bond:portfolio")
 
         self.assertIn("T_INVEST_TOKEN не настроен", screen["text"])
+
+    def test_t_invest_client_calculates_coupon_rate_from_coupon_schedule(self) -> None:
+        client = FakeCouponTInvestClient()
+        position = {
+            "figi": "FIGI1",
+            "instrumentUid": "uid-1",
+            "instrumentType": "bond",
+            "quantity": {"units": "2", "nano": 0},
+            "currentPrice": {"units": "1000", "nano": 0, "currency": "rub"},
+        }
+
+        normalized = client._normalize_position(position)
+
+        self.assertEqual("RU0000000001", normalized["isin"])
+        self.assertAlmostEqual(12.03, normalized["coupon_rate"], places=2)
 
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
@@ -859,13 +878,41 @@ class FakeTInvestClient:
                         "isin": "RU0000000001",
                         "quantity": 1,
                         "position_sum": 100.0,
-                        "expected_yield": 5.0,
+                        "coupon_rate": 5.0,
                         "maturity_date": "2027-01-01",
                         "currency": "rub",
                     }
                 ],
             },
         )()
+
+
+class FakeCouponTInvestClient(TInvestClient):
+    def __init__(self) -> None:
+        super().__init__("token")
+
+    def _fetch_bond(self, instrument_uid: str) -> dict[str, Any]:
+        return {
+            "figi": "FIGI1",
+            "isin": "RU0000000001",
+            "name": "Coupon Bond",
+            "currency": "rub",
+            "nominal": {"units": "1000", "nano": 0, "currency": "rub"},
+            "maturityDate": "2028-01-01T00:00:00Z",
+        }
+
+    def _post(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if method.endswith("GetBondCoupons"):
+            return {
+                "events": [
+                    {
+                        "payOneBond": {"units": "30", "nano": 0, "currency": "rub"},
+                        "couponStartDate": "2026-01-01T00:00:00Z",
+                        "couponEndDate": "2026-04-02T00:00:00Z",
+                    }
+                ]
+            }
+        return {}
 
 
 def restore_env(name: str, value: str | None) -> None:
