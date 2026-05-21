@@ -318,11 +318,12 @@ class IdeaManagerApp:
         try:
             if pending_action == "bond_manual_import":
                 text = self._build_bond_manual_import_text(payload)
+                source_url = self._bond_manual_source_url(payload)
                 screen = await asyncio.to_thread(
                     self.bond_radar.import_manual_text,
                     text,
-                    source_channel=self._bond_manual_source_channel(payload.get("source_url")),
-                    source_url=payload.get("source_url"),
+                    source_channel=self._bond_manual_source_channel_from_payload(payload, source_url),
+                    source_url=source_url,
                 )
                 self._reset_flow(context)
                 await update.message.reply_text(
@@ -507,6 +508,7 @@ class IdeaManagerApp:
         extracted_content = ""
         link_fetch_status = "not_applicable"
         link_fetch_error: str | None = None
+        telegram_source_channel, telegram_source_url = self._telegram_forward_source(update.message)
 
         if update.message.voice or update.message.audio:
             source_type = "voice" if update.message.voice else "audio"
@@ -539,6 +541,8 @@ class IdeaManagerApp:
             "audio_path": audio_path,
             "created_at": self._now_iso(),
             "source_url": source_url,
+            "telegram_source_channel": telegram_source_channel,
+            "telegram_source_url": self._first_telegram_post_url(links) or telegram_source_url,
             "extracted_content": extracted_content,
             "link_fetch_status": link_fetch_status,
             "link_fetch_error": link_fetch_error,
@@ -551,6 +555,14 @@ class IdeaManagerApp:
         if extracted_content and extracted_content not in raw_text:
             return f"{raw_text}\n\n{extracted_content}".strip()
         return raw_text
+
+    @classmethod
+    def _bond_manual_source_url(cls, payload: dict[str, Any]) -> str | None:
+        return payload.get("telegram_source_url") or payload.get("source_url")
+
+    @classmethod
+    def _bond_manual_source_channel_from_payload(cls, payload: dict[str, Any], source_url: str | None) -> str:
+        return payload.get("telegram_source_channel") or cls._bond_manual_source_channel(source_url)
 
     @staticmethod
     def _bond_manual_source_channel(source_url: str | None) -> str:
@@ -565,6 +577,42 @@ class IdeaManagerApp:
         if host:
             return f"web:{host}"
         return "manual"
+
+    @staticmethod
+    def _first_telegram_post_url(links: list[str]) -> str | None:
+        for link in links:
+            if IdeaManagerApp._is_telegram_post_url(link):
+                return link
+        return None
+
+    @staticmethod
+    def _is_telegram_post_url(url: str) -> bool:
+        parsed = urlparse(url)
+        host = parsed.netloc.replace("www.", "")
+        if host not in {"t.me", "telegram.me"}:
+            return False
+        path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+        if len(path_parts) < 2:
+            return False
+        return path_parts[1].isdigit()
+
+    @staticmethod
+    def _telegram_forward_source(message: Message) -> tuple[str | None, str | None]:
+        origin = getattr(message, "forward_origin", None)
+        if not origin:
+            return None, None
+
+        chat = getattr(origin, "chat", None) or getattr(origin, "sender_chat", None)
+        if not chat:
+            return None, None
+
+        username = getattr(chat, "username", None)
+        title = getattr(chat, "title", None)
+        channel = f"@{username}" if username else title
+        message_id = getattr(origin, "message_id", None)
+        if username and message_id:
+            return channel, f"https://t.me/{username}/{message_id}"
+        return channel, None
 
     async def _send_idea_list(self, message: Message, project_key: str) -> None:
         all_sections = project_key == "__all__"

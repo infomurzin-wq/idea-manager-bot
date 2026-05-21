@@ -3,7 +3,10 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
+
+from telegram import Chat, Message, MessageOriginChannel
 
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS
@@ -209,6 +212,43 @@ class BondRadarIntegrationTest(unittest.TestCase):
             "web:smart-lab.ru",
             IdeaManagerApp._bond_manual_source_channel("https://smart-lab.ru/bonds/"),
         )
+
+    def test_bond_manual_import_prefers_telegram_post_url_over_regular_url(self) -> None:
+        payload = {
+            "telegram_source_url": "https://t.me/probonds/123",
+            "source_url": "https://ivolgacap.ru/placement",
+        }
+
+        self.assertEqual("https://t.me/probonds/123", IdeaManagerApp._bond_manual_source_url(payload))
+
+    def test_first_telegram_post_url_ignores_plain_channel_links(self) -> None:
+        self.assertEqual(
+            "https://t.me/probonds/123",
+            IdeaManagerApp._first_telegram_post_url(
+                [
+                    "https://ivolgacap.ru/placement",
+                    "https://t.me/probonds",
+                    "https://t.me/probonds/123",
+                ]
+            ),
+        )
+
+    def test_telegram_forward_source_builds_public_channel_post_url(self) -> None:
+        message = Message(
+            message_id=1000,
+            date=datetime(2026, 5, 21, tzinfo=UTC),
+            chat=Chat(id=1, type="private"),
+            forward_origin=MessageOriginChannel(
+                date=datetime(2026, 5, 21, tzinfo=UTC),
+                chat=Chat(id=-100123, type="channel", title="Pro Bonds", username="probonds"),
+                message_id=123,
+            ),
+        )
+
+        channel, url = IdeaManagerApp._telegram_forward_source(message)
+
+        self.assertEqual("@probonds", channel)
+        self.assertEqual("https://t.me/probonds/123", url)
 
     def test_bond_manual_import_text_includes_fetched_page_content(self) -> None:
         text = IdeaManagerApp._build_bond_manual_import_text(
