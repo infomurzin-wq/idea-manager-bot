@@ -165,6 +165,63 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("ПР-Лизинг 002Р-03", screen["text"])
             self.assertNotIn("Доходность к оферте: 25,2% (new)", screen["text"])
 
+    def test_bridge_imports_manual_text_with_clickable_source_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            text = (
+                "Полипласт П02-БО-99 (А)\n"
+                "Купон: 18%\n"
+                "YTM: 19,5%\n"
+                "Выплаты: 12 раз в год\n"
+                "Срок: 3 года\n"
+                "Сбор заявок до: 25 мая\n"
+            )
+
+            import_screen = bridge.import_manual_text(
+                text,
+                source_channel="@test_channel",
+                source_url="https://t.me/test_channel/123",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+
+            self.assertIn("Источники:", detail_screen["text"])
+            self.assertIn("@test_channel", detail_screen["text"])
+            self.assertIn("https://t.me/test_channel/123", detail_screen["text"])
+
+    def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
+        self.assertEqual(
+            "@probonds",
+            IdeaManagerApp._bond_manual_source_channel("https://t.me/probonds/123"),
+        )
+
+    def test_bond_manual_import_source_channel_uses_web_host_for_regular_urls(self) -> None:
+        self.assertEqual(
+            "web:smart-lab.ru",
+            IdeaManagerApp._bond_manual_source_channel("https://smart-lab.ru/bonds/"),
+        )
+
+    def test_bond_manual_import_text_includes_fetched_page_content(self) -> None:
+        text = IdeaManagerApp._build_bond_manual_import_text(
+            {
+                "normalized_text": "https://example.com/post",
+                "raw_input": "https://example.com/post",
+                "extracted_content": "Полипласт П02-БО-99\nКупон: 18%",
+            }
+        )
+
+        self.assertIn("https://example.com/post", text)
+        self.assertIn("Полипласт П02-БО-99", text)
+
     def test_reject_from_watchlist_keeps_back_navigation_to_watchlist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             store_path = Path(tmp_dir) / "candidates_store.jsonl"

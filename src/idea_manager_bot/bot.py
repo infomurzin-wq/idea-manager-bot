@@ -317,8 +317,13 @@ class IdeaManagerApp:
 
         try:
             if pending_action == "bond_manual_import":
-                text = payload["normalized_text"] or payload["raw_input"]
-                screen = await asyncio.to_thread(self.bond_radar.import_manual_text, text)
+                text = self._build_bond_manual_import_text(payload)
+                screen = await asyncio.to_thread(
+                    self.bond_radar.import_manual_text,
+                    text,
+                    source_channel=self._bond_manual_source_channel(payload.get("source_url")),
+                    source_url=payload.get("source_url"),
+                )
                 self._reset_flow(context)
                 await update.message.reply_text(
                     screen["text"][:4000],
@@ -538,6 +543,28 @@ class IdeaManagerApp:
             "link_fetch_status": link_fetch_status,
             "link_fetch_error": link_fetch_error,
         }
+
+    @staticmethod
+    def _build_bond_manual_import_text(payload: dict[str, Any]) -> str:
+        raw_text = (payload.get("normalized_text") or payload.get("raw_input") or "").strip()
+        extracted_content = (payload.get("extracted_content") or "").strip()
+        if extracted_content and extracted_content not in raw_text:
+            return f"{raw_text}\n\n{extracted_content}".strip()
+        return raw_text
+
+    @staticmethod
+    def _bond_manual_source_channel(source_url: str | None) -> str:
+        if not source_url:
+            return "manual"
+
+        parsed = urlparse(source_url)
+        host = parsed.netloc.replace("www.", "")
+        first_path_part = parsed.path.strip("/").split("/", 1)[0]
+        if host in {"t.me", "telegram.me"} and first_path_part:
+            return f"@{first_path_part}"
+        if host:
+            return f"web:{host}"
+        return "manual"
 
     async def _send_idea_list(self, message: Message, project_key: str) -> None:
         all_sections = project_key == "__all__"
