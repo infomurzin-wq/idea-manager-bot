@@ -148,6 +148,19 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn("bond:cashflow", callbacks)
 
+    def test_home_screen_groups_bond_actions_into_two_columns(self) -> None:
+        bridge = BondRadarBridge(
+            scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+            store_path=BOND_RADAR_STORE,
+        )
+
+        screen = bridge.handle_action("bond:home")
+
+        self.assertEqual(["bond:list:new", "bond:add:manual"], [item["callback_data"] for item in screen["buttons"][0]])
+        self.assertEqual(["bond:portfolio", "bond:cashflow"], [item["callback_data"] for item in screen["buttons"][1]])
+        self.assertEqual(["bond:list:watchlist", "bond:list:rejected"], [item["callback_data"] for item in screen["buttons"][2]])
+        self.assertEqual([{"text": "Главное меню", "callback_data": "main:home"}], screen["buttons"][3])
+
     def test_bridge_imports_manual_text_into_store(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             store_path = Path(tmp_dir) / "candidates_store.jsonl"
