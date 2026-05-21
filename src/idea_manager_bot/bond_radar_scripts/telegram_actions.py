@@ -78,6 +78,16 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         key = resolve_action_key(records, value)
         return show_screen(records, key, origin=origin)
 
+    if action.startswith("bond:isin:"):
+        origin, value = parse_origin_and_key(action.removeprefix("bond:isin:"))
+        key = resolve_action_key(records, value)
+        return isin_screen(records, key, origin=origin)
+
+    if action.startswith("bond:append:"):
+        origin, value = parse_origin_and_key(action.removeprefix("bond:append:"))
+        key = resolve_action_key(records, value)
+        return append_prompt_screen(records, key, origin=origin)
+
     if action.startswith("bond:watch:"):
         origin, value = parse_origin_and_key(action.removeprefix("bond:watch:"))
         key = resolve_action_key(records, value)
@@ -193,6 +203,40 @@ def show_screen(
     return {"text": text, "buttons": detail_buttons(record, origin=origin)}
 
 
+def isin_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    origin: str | None = None,
+) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    isin = record["candidate"]["instrument"].get("isin")
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    if not isin:
+        text = f"ISIN для {title} пока не найден."
+    else:
+        text = f"ISIN для {title}\n\n{isin}"
+    return {"text": text, "buttons": detail_back_buttons(record, origin=origin)}
+
+
+def append_prompt_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    origin: str | None = None,
+) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    return {
+        "text": (
+            f"Дополнить данные: {title}\n\n"
+            "Отправь следующим сообщением новый фрагмент текста по этой бумаге. "
+            "Бот попробует заполнить пустые поля и сохранить источник."
+        ),
+        "buttons": detail_back_buttons(record, origin=origin),
+    }
+
+
 def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list[list[dict[str, str]]]:
     key = record["storage"]["key"]
     short_id = short_callback_id(key)
@@ -214,8 +258,23 @@ def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list
         rows.append([button("В watchlist", f"bond:watch:{encoded_origin}:{short_id}")])
         rows.append([button("Удалить", f"bond:delete:{encoded_origin}:{short_id}")])
 
-    rows.append([button("Назад", list_action(back_status, back_page, back_sort)), button("Главное меню", ACTION_MAIN_MENU)])
+    isin = record["candidate"]["instrument"].get("isin")
+    utility_row = [button("Дополнить данные", f"bond:append:{encoded_origin}:{short_id}")]
+    if isin:
+        utility_row.append(button("ISIN отдельно", f"bond:isin:{encoded_origin}:{short_id}"))
+    rows.append(utility_row)
+    rows.append(detail_back_row(back_status, back_page, back_sort))
     return rows
+
+
+def detail_back_buttons(record: dict[str, Any], *, origin: str | None = None) -> list[list[dict[str, str]]]:
+    status = record["storage"]["status"]
+    back_status, back_page, back_sort = back_target(origin, status)
+    return [detail_back_row(back_status, back_page, back_sort)]
+
+
+def detail_back_row(back_status: str, back_page: int, back_sort: str) -> list[dict[str, str]]:
+    return [button("Назад", list_action(back_status, back_page, back_sort)), button("Главное меню", ACTION_MAIN_MENU)]
 
 
 def delete_confirm_screen(record: dict[str, Any], *, origin: str | None = None) -> dict[str, Any]:

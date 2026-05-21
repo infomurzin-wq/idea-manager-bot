@@ -226,6 +226,16 @@ class IdeaManagerApp:
             )
             return
 
+        if data.startswith("bond:append:"):
+            context.user_data["pending_action"] = "bond_append_candidate"
+            context.user_data["pending_bond_append_action"] = data
+            screen = self.bond_radar.handle_action(data)
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
         if data.startswith("bond:"):
             await self._send_bond_screen(query.message, data)
             return
@@ -300,7 +310,14 @@ class IdeaManagerApp:
             return
 
         pending_action = context.user_data.get("pending_action")
-        if pending_action not in {"idea", "context", "comment", "append_context_text", "bond_manual_import"}:
+        if pending_action not in {
+            "idea",
+            "context",
+            "comment",
+            "append_context_text",
+            "bond_manual_import",
+            "bond_append_candidate",
+        }:
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
                 return
@@ -321,6 +338,31 @@ class IdeaManagerApp:
                 source_url = self._bond_manual_source_url(payload)
                 screen = await asyncio.to_thread(
                     self.bond_radar.import_manual_text,
+                    text,
+                    source_channel=self._bond_manual_source_channel_from_payload(payload, source_url),
+                    source_url=source_url,
+                )
+                self._reset_flow(context)
+                await update.message.reply_text(
+                    screen["text"][:4000],
+                    reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+                )
+                return
+
+            if pending_action == "bond_append_candidate":
+                append_action = context.user_data.get("pending_bond_append_action")
+                if not append_action:
+                    self._reset_flow(context)
+                    await update.message.reply_text(
+                        "Не нашёл карточку для дополнения. Открой карточку заново.",
+                        reply_markup=self._main_menu(),
+                    )
+                    return
+                text = self._build_bond_manual_import_text(payload)
+                source_url = self._bond_manual_source_url(payload)
+                screen = await asyncio.to_thread(
+                    self.bond_radar.append_manual_text,
+                    append_action,
                     text,
                     source_channel=self._bond_manual_source_channel_from_payload(payload, source_url),
                     source_url=source_url,

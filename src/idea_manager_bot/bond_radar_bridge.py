@@ -126,6 +126,77 @@ class BondRadarBridge:
         except Exception as exc:  # noqa: BLE001
             return self._unavailable_screen(f"Не удалось разобрать текст облигации: {exc}")
 
+    def append_manual_text(
+        self,
+        append_action: str,
+        text: str,
+        *,
+        source_channel: str = "manual",
+        source_url: str | None = None,
+    ) -> dict[str, Any]:
+        if not text.strip():
+            return {
+                "text": "Не получил текст для дополнения карточки.",
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+
+        try:
+            self._ensure_store_exists()
+            extract_candidate = self._import_from_scripts_dir("extract_candidate")
+            deduplicate_candidates = self._import_from_scripts_dir("deduplicate_candidates")
+            candidate_store = self._import_from_scripts_dir("candidate_store")
+            telegram_actions = self._import_from_scripts_dir("telegram_actions")
+
+            origin, value = telegram_actions.parse_origin_and_key(
+                append_action.removeprefix("bond:append:")
+            )
+            records = candidate_store.load_store(self.store_path)
+            key = telegram_actions.resolve_action_key(records, value)
+            now = datetime.now(UTC)
+            post = extract_candidate.SourcePost(
+                post_id=f"manual-append-{now.strftime('%Y%m%d%H%M%S')}",
+                channel=source_channel,
+                url=source_url,
+                post_date=now.date().isoformat(),
+                text=text.strip(),
+            )
+            cards = extract_candidate.extract_candidates(post)
+            merged_cards = deduplicate_candidates.deduplicate_candidates(cards)
+            if not merged_cards:
+                record = candidate_store.get_candidate(records, key)
+                return telegram_actions.show_screen(
+                    records,
+                    record["storage"]["key"],
+                    prefix="Не нашёл параметров облигации в дополнении.",
+                    origin=origin,
+                )
+
+            selected = self._select_append_candidate(candidate_store, records, key, merged_cards)
+            record = candidate_store.merge_candidate_into_record(records, key, selected, now=now)
+            candidate_store.write_store(self.store_path, records)
+            return telegram_actions.show_screen(
+                records,
+                record["storage"]["key"],
+                prefix="Данные карточки дополнены.",
+                origin=origin,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._unavailable_screen(f"Не удалось дополнить карточку облигации: {exc}")
+
+    @staticmethod
+    def _select_append_candidate(
+        candidate_store: Any,
+        records: dict[str, dict[str, Any]],
+        key: str,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        target_record = candidate_store.get_candidate(records, key)
+        target_records = {target_record["storage"]["key"]: target_record}
+        for candidate in candidates:
+            if candidate_store.find_existing_key(target_records, candidate):
+                return candidate
+        return candidates[0]
+
     @staticmethod
     def _manual_import_result_screen(
         *,

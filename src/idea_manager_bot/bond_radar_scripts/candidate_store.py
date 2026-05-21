@@ -231,6 +231,22 @@ def delete_candidate(records: dict[str, dict[str, Any]], lookup_key: str) -> dic
     return records.pop(matched_key)
 
 
+def merge_candidate_into_record(
+    records: dict[str, dict[str, Any]],
+    lookup_key: str,
+    candidate: dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    matched_key = find_existing_record_key(records, lookup_key)
+    if matched_key is None:
+        raise KeyError(f"Candidate not found: {lookup_key}")
+
+    record = records[matched_key]
+    merge_record(record, candidate, iso_timestamp(now))
+    return record
+
+
 def list_candidates(
     records: dict[str, dict[str, Any]],
     *,

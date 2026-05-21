@@ -201,6 +201,85 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("@test_channel", detail_screen["text"])
             self.assertIn("https://t.me/test_channel/123", detail_screen["text"])
 
+    def test_bridge_appends_manual_text_to_existing_card(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            import_screen = bridge.import_manual_text(
+                "Полипласт П02-БО-99 (А)\n"
+                "Купон: 18%\n"
+                "Выплаты: 12 раз в год\n"
+                "Срок: 3 года\n"
+                "Сбор заявок до: 25 мая\n"
+                "Размещение: 28 мая 2026\n",
+                source_channel="@first",
+                source_url="https://t.me/first/1",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+            append_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:append:")
+            )
+
+            appended_screen = bridge.append_manual_text(
+                append_callback,
+                "Полипласт П02-БО-99 (А)\n"
+                "Купон: 18%\n"
+                "YTM: 19,4%\n"
+                "Выплаты: 12 раз в год\n"
+                "Срок: 3 года\n"
+                "Сбор заявок до: 25 мая\n",
+                source_channel="@second",
+                source_url="https://t.me/second/2",
+            )
+
+            self.assertIn("Данные карточки дополнены.", appended_screen["text"])
+            self.assertIn("YTM: 19.4%", appended_screen["text"])
+            self.assertIn("Рейтинг: A", appended_screen["text"])
+            self.assertIn("Источников: 2", appended_screen["text"])
+
+    def test_bridge_renders_separate_isin_screen(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            import_screen = bridge.import_manual_text(
+                "ПР-Лизинг 002Р-03 (RU000A10CJ92)\n"
+                "Купон: 20%, ежемесячно\n"
+                "YTM: 25,2%\n",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+            isin_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:isin:")
+            )
+
+            isin_screen = bridge.handle_action(isin_callback)
+
+            self.assertIn("ISIN для ПР-Лизинг 002Р-03", isin_screen["text"])
+            self.assertIn("RU000A10CJ92", isin_screen["text"])
+
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
             "@probonds",
