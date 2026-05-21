@@ -222,6 +222,7 @@ def home_screen(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "buttons": [
             [button(f"Новые кандидаты ({counts['new']})", "bond:list:new")],
             [button("Добавить вручную", ACTION_ADD_MANUAL)],
+            [button("Портфель", "bond:portfolio")],
             [button(f"Watchlist ({counts['watchlist']})", "bond:list:watchlist")],
             [button(f"Отклоненные ({counts['rejected']})", "bond:list:rejected")],
             [button("Главное меню", ACTION_MAIN_MENU)],

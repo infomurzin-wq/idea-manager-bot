@@ -20,6 +20,8 @@ class Settings:
     github_sync_branch: str
     github_sync_token: str | None
     github_sync_base_path: str
+    t_invest_token: str | None
+    t_invest_account_id: str | None
 
 
 def load_settings() -> Settings:
@@ -50,4 +52,6 @@ def load_settings() -> Settings:
         github_sync_branch=os.getenv("GITHUB_SYNC_BRANCH", "main").strip(),
         github_sync_token=os.getenv("GITHUB_SYNC_TOKEN") or None,
         github_sync_base_path=os.getenv("GITHUB_SYNC_BASE_PATH", "").strip(),
+        t_invest_token=os.getenv("T_INVEST_TOKEN") or None,
+        t_invest_account_id=os.getenv("T_INVEST_ACCOUNT_ID") or None,
     )

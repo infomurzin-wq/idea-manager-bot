@@ -27,6 +27,7 @@ from telegram.ext import (
     filters,
 )
 
+from idea_manager_bot.bond_portfolio import render_portfolio_screen, write_snapshot
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.config import Settings, load_settings
 from idea_manager_bot.context_loader import load_project_context
@@ -35,6 +36,7 @@ from idea_manager_bot.link_reader import LinkReader
 from idea_manager_bot.llm import LLMService
 from idea_manager_bot.project_registry import build_project_registry
 from idea_manager_bot.storage import IdeaStorage
+from idea_manager_bot.t_invest import TInvestClient
 
 
 logging.basicConfig(
@@ -61,6 +63,7 @@ class IdeaManagerApp:
         self.link_reader = LinkReader()
         self.exporter = SyncExporter(settings)
         self.bond_radar = BondRadarBridge.from_workspace(settings.workspace_root)
+        self.t_invest = TInvestClient(settings.t_invest_token)
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self._reset_flow(context)
@@ -254,6 +257,10 @@ class IdeaManagerApp:
                 screen["text"][:4000],
                 reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
             )
+            return
+
+        if data.startswith("bond:portfolio"):
+            await self._send_bond_portfolio_screen(query.message, data)
             return
 
         if data.startswith("bond:"):
@@ -1094,6 +1101,46 @@ class IdeaManagerApp:
             screen["text"][:4000],
             reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
         )
+
+    async def _send_bond_portfolio_screen(self, message: Message, action: str) -> None:
+        screen = await asyncio.to_thread(self._build_bond_portfolio_screen, action)
+        await message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+        )
+
+    def _build_bond_portfolio_screen(self, action: str) -> dict[str, Any]:
+        if not self.t_invest.configured:
+            return {
+                "text": (
+                    "Портфель облигаций\n\n"
+                    "T_INVEST_TOKEN не настроен. Добавь read-only токен Т-Инвестиций в Railway Variables."
+                ),
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+        sort = self._bond_portfolio_sort(action)
+        try:
+            snapshot = self.t_invest.fetch_portfolio_snapshot(self.settings.t_invest_account_id)
+            snapshot_dict = {
+                "fetched_at": snapshot.fetched_at,
+                "account_id": snapshot.account_id,
+                "positions": snapshot.positions,
+            }
+            write_snapshot(self.settings.bot_data_dir / "bond-radar" / "portfolio_snapshot.json", snapshot_dict)
+            return render_portfolio_screen(snapshot_dict, sort=sort)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("T-Invest portfolio refresh failed")
+            return {
+                "text": f"Портфель облигаций\n\nНе удалось обновить портфель через T-Invest API: {exc}",
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+
+    @staticmethod
+    def _bond_portfolio_sort(action: str) -> str:
+        prefix = "bond:portfolio:"
+        if action.startswith(prefix):
+            return action.removeprefix(prefix)
+        return "sum_desc"
 
     def _project_selector(self, action: str, include_all: bool = False) -> InlineKeyboardMarkup:
         keyboard = [

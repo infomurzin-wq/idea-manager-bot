@@ -8,6 +8,7 @@ from pathlib import Path
 
 from telegram import Chat, Message, MessageOriginChannel
 
+from idea_manager_bot.bond_portfolio import render_portfolio_screen
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS
 from idea_manager_bot.config import Settings
@@ -115,6 +116,21 @@ class BondRadarIntegrationTest(unittest.TestCase):
         ]
 
         self.assertIn("bond:add:manual", callbacks)
+
+    def test_home_screen_has_portfolio_button(self) -> None:
+        bridge = BondRadarBridge(
+            scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+            store_path=BOND_RADAR_STORE,
+        )
+
+        screen = bridge.handle_action("bond:home")
+        callbacks = [
+            item["callback_data"]
+            for row in screen["buttons"]
+            for item in row
+        ]
+
+        self.assertIn("bond:portfolio", callbacks)
 
     def test_bridge_imports_manual_text_into_store(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -489,6 +505,42 @@ class BondRadarIntegrationTest(unittest.TestCase):
                 )
             )
 
+    def test_portfolio_screen_sorts_positions_by_sum(self) -> None:
+        snapshot = {
+            "fetched_at": "2026-05-21T12:00:00+00:00",
+            "account_id": "account-1",
+            "positions": [
+                {"name": "Small Bond", "isin": "RU1", "quantity": 1, "position_sum": 100.0, "expected_yield": 5.0, "maturity_date": "2028-01-01", "currency": "rub"},
+                {"name": "Large Bond", "isin": "RU2", "quantity": 2, "position_sum": 500.0, "expected_yield": 10.0, "maturity_date": "2027-01-01", "currency": "rub"},
+            ],
+        }
+
+        screen = render_portfolio_screen(snapshot, sort="sum_desc")
+
+        self.assertIn("Портфель облигаций", screen["text"])
+        self.assertLess(screen["text"].index("Large Bond"), screen["text"].index("Small Bond"))
+        callbacks = [item["callback_data"] for row in screen["buttons"] for item in row]
+        self.assertIn("bond:portfolio:maturity_asc", callbacks)
+        self.assertIn("bond:portfolio:sum_asc", callbacks)
+
+    def test_build_portfolio_screen_refreshes_snapshot_each_time(self) -> None:
+        app = IdeaManagerApp(make_settings(t_invest_token="token", t_invest_account_id="account-1"))
+        app.t_invest = FakeTInvestClient()
+
+        screen = app._build_bond_portfolio_screen("bond:portfolio:yield_desc")
+
+        self.assertEqual(1, app.t_invest.calls)
+        self.assertIn("Портфель облигаций", screen["text"])
+        self.assertIn("Demo Bond", screen["text"])
+        self.assertTrue((app.settings.bot_data_dir / "bond-radar" / "portfolio_snapshot.json").exists())
+
+    def test_build_portfolio_screen_requires_t_invest_token(self) -> None:
+        app = IdeaManagerApp(make_settings(t_invest_token=None))
+
+        screen = app._build_bond_portfolio_screen("bond:portfolio")
+
+        self.assertIn("T_INVEST_TOKEN не настроен", screen["text"])
+
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
             "@probonds",
@@ -755,7 +807,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
         self.assertIn(MENU_BONDS, labels)
 
 
-def make_settings() -> Settings:
+def make_settings(t_invest_token: str | None = None, t_invest_account_id: str | None = None) -> Settings:
     temp_root = Path(tempfile.mkdtemp(prefix="idea-manager-bot-test-workspace-"))
     data_dir = Path(tempfile.mkdtemp(prefix="idea-manager-bot-test-data-"))
     os.environ.setdefault("BOND_RADAR_PROJECT_DIR", str(BOND_RADAR_PROJECT))
@@ -771,6 +823,8 @@ def make_settings() -> Settings:
         github_sync_branch="main",
         github_sync_token=None,
         github_sync_base_path="",
+        t_invest_token=t_invest_token,
+        t_invest_account_id=t_invest_account_id,
     )
 
 
@@ -783,6 +837,35 @@ class FakeBondResearchLLM:
         self.question = question
         self.history = history
         return "Ответ fake research"
+
+
+class FakeTInvestClient:
+    configured = True
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fetch_portfolio_snapshot(self, account_id: str | None = None) -> Any:
+        self.calls += 1
+        return type(
+            "Snapshot",
+            (),
+            {
+                "fetched_at": "2026-05-21T12:00:00+00:00",
+                "account_id": account_id or "account-1",
+                "positions": [
+                    {
+                        "name": "Demo Bond",
+                        "isin": "RU0000000001",
+                        "quantity": 1,
+                        "position_sum": 100.0,
+                        "expected_yield": 5.0,
+                        "maturity_date": "2027-01-01",
+                        "currency": "rub",
+                    }
+                ],
+            },
+        )()
 
 
 def restore_env(name: str, value: str | None) -> None:
