@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,20 @@ PORTFOLIO_SORTS = {
     "sum_asc",
 }
 DEFAULT_PORTFOLIO_SORT = "sum_desc"
+MONTH_NAMES = {
+    1: "Январь",
+    2: "Февраль",
+    3: "Март",
+    4: "Апрель",
+    5: "Май",
+    6: "Июнь",
+    7: "Июль",
+    8: "Август",
+    9: "Сентябрь",
+    10: "Октябрь",
+    11: "Ноябрь",
+    12: "Декабрь",
+}
 
 
 def write_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
@@ -54,7 +69,52 @@ def render_portfolio_screen(snapshot: dict[str, Any], *, sort: str = DEFAULT_POR
                 button("Сумма", next_portfolio_sort("sum", normalized_sort)),
             ],
             [button("Обновить", normalized_sort)],
+            [{"text": "Cashflow", "callback_data": "bond:cashflow"}],
             [{"text": "К облигациям", "callback_data": "bond:home"}, {"text": "Главное меню", "callback_data": "main:home"}],
+        ],
+    }
+
+
+def render_cashflow_screen(snapshot: dict[str, Any]) -> dict[str, Any]:
+    events = sorted(snapshot.get("events", []), key=lambda event: (event.get("date") or "", event.get("type") or "", event.get("name") or ""))
+    lines = [
+        "Cashflow на 3 месяца",
+        f"Срез: {snapshot.get('fetched_at', 'н/д')}",
+        "",
+    ]
+    if not events:
+        lines.append("Предстоящие выплаты по облигациям на 3 месяца не найдены.")
+    coupon_total = 0.0
+    principal_total = 0.0
+    for month_key, month_events in group_events_by_month(events).items():
+        month_total = sum(numeric_sort_value(event.get("amount")) or 0.0 for event in month_events)
+        lines.append(f"{format_month_key(month_key)}:")
+        for event in month_events:
+            amount = numeric_sort_value(event.get("amount")) or 0.0
+            if event.get("type") == "coupon":
+                coupon_total += amount
+            else:
+                principal_total += amount
+            lines.append(
+                f"- {format_event_day(event.get('date'))} {cashflow_type_label(event.get('type'))} "
+                f"{event.get('name') or 'Облигация'}: {display_money(amount, event.get('currency'))}"
+            )
+        lines.append(f"Всего: {display_money(month_total, month_currency(month_events))}")
+        lines.append("")
+    if events:
+        lines.extend(
+            [
+                "Итого:",
+                f"Купоны: {display_money(coupon_total, total_currency(events))}",
+                f"Амортизация/погашение: {display_money(principal_total, total_currency(events))}",
+            ]
+        )
+    return {
+        "text": "\n".join(lines).strip(),
+        "buttons": [
+            [{"text": "Обновить Cashflow", "callback_data": "bond:cashflow"}],
+            [{"text": "Портфель", "callback_data": "bond:portfolio"}, {"text": "К облигациям", "callback_data": "bond:home"}],
+            [{"text": "Главное меню", "callback_data": "main:home"}],
         ],
     }
 
@@ -193,8 +253,20 @@ def display_money(value: Any, currency: str | None) -> str:
     number = numeric_sort_value(value)
     if number is None:
         return "н/д"
-    suffix = f" {currency}" if currency else ""
-    return f"{number:,.2f}".replace(",", " ") + suffix
+    suffix = currency_suffix(currency)
+    if number.is_integer():
+        amount = f"{int(number):,}".replace(",", " ")
+    else:
+        amount = f"{number:,.2f}".replace(",", " ")
+    return amount + suffix
+
+
+def currency_suffix(currency: str | None) -> str:
+    if not currency:
+        return ""
+    if str(currency).lower() in {"rub", "rur"}:
+        return " ₽"
+    return f" {currency}"
 
 
 def display_percent(value: Any) -> str:
@@ -213,6 +285,51 @@ def display_date(value: Any) -> str:
         return parsed.strftime("%d.%m.%Y")
     except ValueError:
         return text
+
+
+def group_events_by_month(events: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        event_date = str(event.get("date") or "")
+        if len(event_date) >= 7:
+            grouped[event_date[:7]].append(event)
+    return dict(sorted(grouped.items()))
+
+
+def format_month_key(value: str) -> str:
+    try:
+        year, month = value.split("-", 1)
+        return f"{MONTH_NAMES[int(month)]} {year}"
+    except (ValueError, KeyError):
+        return value
+
+
+def format_event_day(value: Any) -> str:
+    text = str(value or "")
+    try:
+        parsed = date.fromisoformat(text[:10])
+        return parsed.strftime("%d.%m")
+    except ValueError:
+        return text
+
+
+def cashflow_type_label(value: Any) -> str:
+    if value == "coupon":
+        return "Купон"
+    if value == "amortization":
+        return "Амортизация"
+    if value == "maturity":
+        return "Погашение"
+    return "Выплата"
+
+
+def month_currency(events: list[dict[str, Any]]) -> str | None:
+    return events[0].get("currency") if events else None
+
+
+def total_currency(events: list[dict[str, Any]]) -> str | None:
+    currencies = {event.get("currency") for event in events if event.get("currency")}
+    return currencies.pop() if len(currencies) == 1 else None
 
 
 def button(text: str, sort: str) -> dict[str, str]:

@@ -27,7 +27,7 @@ from telegram.ext import (
     filters,
 )
 
-from idea_manager_bot.bond_portfolio import render_portfolio_screen, write_snapshot
+from idea_manager_bot.bond_portfolio import render_cashflow_screen, render_portfolio_screen, write_snapshot
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.config import Settings, load_settings
 from idea_manager_bot.context_loader import load_project_context
@@ -261,6 +261,10 @@ class IdeaManagerApp:
 
         if data.startswith("bond:portfolio"):
             await self._send_bond_portfolio_screen(query.message, data)
+            return
+
+        if data.startswith("bond:cashflow"):
+            await self._send_bond_cashflow_screen(query.message)
             return
 
         if data.startswith("bond:"):
@@ -1109,6 +1113,13 @@ class IdeaManagerApp:
             reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
         )
 
+    async def _send_bond_cashflow_screen(self, message: Message) -> None:
+        screen = await asyncio.to_thread(self._build_bond_cashflow_screen)
+        await message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+        )
+
     def _build_bond_portfolio_screen(self, action: str) -> dict[str, Any]:
         if not self.t_invest.configured:
             return {
@@ -1132,6 +1143,31 @@ class IdeaManagerApp:
             LOGGER.exception("T-Invest portfolio refresh failed")
             return {
                 "text": f"Портфель облигаций\n\nНе удалось обновить портфель через T-Invest API: {exc}",
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+
+    def _build_bond_cashflow_screen(self) -> dict[str, Any]:
+        if not self.t_invest.configured:
+            return {
+                "text": (
+                    "Cashflow на 3 месяца\n\n"
+                    "T_INVEST_TOKEN не настроен. Добавь read-only токен Т-Инвестиций в Railway Variables."
+                ),
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+        try:
+            snapshot = self.t_invest.fetch_cashflow_snapshot(self.settings.t_invest_account_id)
+            snapshot_dict = {
+                "fetched_at": snapshot.fetched_at,
+                "account_id": snapshot.account_id,
+                "events": snapshot.events,
+            }
+            write_snapshot(self.settings.bot_data_dir / "bond-radar" / "cashflow_snapshot.json", snapshot_dict)
+            return render_cashflow_screen(snapshot_dict)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("T-Invest cashflow refresh failed")
+            return {
+                "text": f"Cashflow на 3 месяца\n\nНе удалось обновить cashflow через T-Invest API: {exc}",
                 "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
             }
 

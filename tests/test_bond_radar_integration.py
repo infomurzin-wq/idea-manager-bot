@@ -8,7 +8,7 @@ from pathlib import Path
 
 from telegram import Chat, Message, MessageOriginChannel
 
-from idea_manager_bot.bond_portfolio import render_portfolio_screen
+from idea_manager_bot.bond_portfolio import render_cashflow_screen, render_portfolio_screen
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS
 from idea_manager_bot.config import Settings
@@ -132,6 +132,21 @@ class BondRadarIntegrationTest(unittest.TestCase):
         ]
 
         self.assertIn("bond:portfolio", callbacks)
+
+    def test_home_screen_has_cashflow_button(self) -> None:
+        bridge = BondRadarBridge(
+            scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+            store_path=BOND_RADAR_STORE,
+        )
+
+        screen = bridge.handle_action("bond:home")
+        callbacks = [
+            item["callback_data"]
+            for row in screen["buttons"]
+            for item in row
+        ]
+
+        self.assertIn("bond:cashflow", callbacks)
 
     def test_bridge_imports_manual_text_into_store(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -545,6 +560,49 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn("T_INVEST_TOKEN не настроен", screen["text"])
 
+    def test_cashflow_screen_groups_events_by_month_and_totals(self) -> None:
+        snapshot = {
+            "fetched_at": "2026-05-21T12:00:00+00:00",
+            "account_id": "account-1",
+            "events": [
+                {"date": "2026-05-27", "type": "coupon", "name": "Бумага А", "amount": 2340.0, "currency": "rub"},
+                {"date": "2026-06-14", "type": "coupon", "name": "Бумага Б", "amount": 4100.0, "currency": "rub"},
+                {"date": "2026-06-30", "type": "amortization", "name": "Бумага В", "amount": 20000.0, "currency": "rub"},
+                {"date": "2026-07-10", "type": "maturity", "name": "Бумага Г", "amount": 100000.0, "currency": "rub"},
+            ],
+        }
+
+        screen = render_cashflow_screen(snapshot)
+
+        self.assertIn("Cashflow на 3 месяца", screen["text"])
+        self.assertIn("Май 2026:", screen["text"])
+        self.assertIn("- 27.05 Купон Бумага А: 2 340 ₽", screen["text"])
+        self.assertIn("Всего: 2 340 ₽", screen["text"])
+        self.assertIn("Июнь 2026:", screen["text"])
+        self.assertIn("Амортизация Бумага В", screen["text"])
+        self.assertIn("Погашение Бумага Г", screen["text"])
+        self.assertIn("Всего: 24 100 ₽", screen["text"])
+        self.assertIn("Купоны: 6 440 ₽", screen["text"])
+        self.assertIn("Амортизация/погашение: 120 000 ₽", screen["text"])
+
+    def test_build_cashflow_screen_refreshes_snapshot_each_time(self) -> None:
+        app = IdeaManagerApp(make_settings(t_invest_token="token", t_invest_account_id="account-1"))
+        app.t_invest = FakeTInvestClient()
+
+        screen = app._build_bond_cashflow_screen()
+
+        self.assertEqual(1, app.t_invest.cashflow_calls)
+        self.assertIn("Cashflow на 3 месяца", screen["text"])
+        self.assertIn("Demo Bond", screen["text"])
+        self.assertTrue((app.settings.bot_data_dir / "bond-radar" / "cashflow_snapshot.json").exists())
+
+    def test_build_cashflow_screen_requires_t_invest_token(self) -> None:
+        app = IdeaManagerApp(make_settings(t_invest_token=None))
+
+        screen = app._build_bond_cashflow_screen()
+
+        self.assertIn("T_INVEST_TOKEN не настроен", screen["text"])
+
     def test_t_invest_client_calculates_coupon_rate_from_coupon_schedule(self) -> None:
         client = FakeCouponTInvestClient()
         position = {
@@ -559,6 +617,21 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         self.assertEqual("RU0000000001", normalized["isin"])
         self.assertAlmostEqual(12.03, normalized["coupon_rate"], places=2)
+
+    def test_t_invest_client_fetches_cashflow_with_coupons_and_principal_events(self) -> None:
+        client = FakeCashflowTInvestClient()
+
+        snapshot = client.fetch_cashflow_snapshot("account-1")
+
+        self.assertEqual("account-1", snapshot.account_id)
+        self.assertEqual("uid-1", client.bond_events_payload["instrumentId"])
+        self.assertEqual(
+            [
+                {"date": "2026-05-27", "type": "coupon", "name": "Cashflow Bond", "amount": 60.0, "currency": "rub"},
+                {"date": "2026-06-30", "type": "maturity", "name": "Cashflow Bond", "amount": 2000.0, "currency": "rub"},
+            ],
+            snapshot.events,
+        )
 
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
@@ -863,6 +936,7 @@ class FakeTInvestClient:
 
     def __init__(self) -> None:
         self.calls = 0
+        self.cashflow_calls = 0
 
     def fetch_portfolio_snapshot(self, account_id: str | None = None) -> Any:
         self.calls += 1
@@ -880,6 +954,26 @@ class FakeTInvestClient:
                         "position_sum": 100.0,
                         "coupon_rate": 5.0,
                         "maturity_date": "2027-01-01",
+                        "currency": "rub",
+                    }
+                ],
+            },
+        )()
+
+    def fetch_cashflow_snapshot(self, account_id: str | None = None) -> Any:
+        self.cashflow_calls += 1
+        return type(
+            "CashflowSnapshot",
+            (),
+            {
+                "fetched_at": "2026-05-21T12:00:00+00:00",
+                "account_id": account_id or "account-1",
+                "events": [
+                    {
+                        "date": "2026-05-27",
+                        "type": "coupon",
+                        "name": "Demo Bond",
+                        "amount": 100.0,
                         "currency": "rub",
                     }
                 ],
@@ -909,6 +1003,57 @@ class FakeCouponTInvestClient(TInvestClient):
                         "payOneBond": {"units": "30", "nano": 0, "currency": "rub"},
                         "couponStartDate": "2026-01-01T00:00:00Z",
                         "couponEndDate": "2026-04-02T00:00:00Z",
+                    }
+                ]
+            }
+        return {}
+
+
+class FakeCashflowTInvestClient(TInvestClient):
+    def __init__(self) -> None:
+        super().__init__("token")
+        self.bond_events_payload: dict[str, Any] = {}
+
+    def _fetch_bond(self, instrument_uid: str) -> dict[str, Any]:
+        return {
+            "figi": "FIGI1",
+            "isin": "RU0000000002",
+            "name": "Cashflow Bond",
+            "currency": "rub",
+            "nominal": {"units": "1000", "nano": 0, "currency": "rub"},
+            "maturityDate": "2026-06-30T00:00:00Z",
+        }
+
+    def _post(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if method.endswith("GetPortfolio"):
+            return {
+                "positions": [
+                    {
+                        "figi": "FIGI1",
+                        "instrumentUid": "uid-1",
+                        "instrumentType": "bond",
+                        "quantity": {"units": "2", "nano": 0},
+                        "currentPrice": {"units": "1000", "nano": 0, "currency": "rub"},
+                    }
+                ]
+            }
+        if method.endswith("GetBondCoupons"):
+            return {
+                "events": [
+                    {
+                        "couponDate": "2026-05-27T00:00:00Z",
+                        "payOneBond": {"units": "30", "nano": 0, "currency": "rub"},
+                    }
+                ]
+            }
+        if method.endswith("GetBondEvents"):
+            self.bond_events_payload = payload
+            return {
+                "events": [
+                    {
+                        "eventType": "EVENT_TYPE_MTY",
+                        "eventDate": "2026-06-30T00:00:00Z",
+                        "payOneBond": {"units": "1000", "nano": 0, "currency": "rub"},
                     }
                 ]
             }

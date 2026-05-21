@@ -17,6 +17,13 @@ class TInvestSnapshot:
     positions: list[dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class TInvestCashflowSnapshot:
+    fetched_at: str
+    account_id: str
+    events: list[dict[str, Any]]
+
+
 class TInvestClient:
     def __init__(self, token: str | None, *, base_url: str = API_BASE_URL) -> None:
         self.token = token.strip() if token else ""
@@ -41,6 +48,42 @@ class TInvestClient:
             fetched_at=datetime.now(UTC).isoformat(timespec="seconds"),
             account_id=selected_account_id,
             positions=positions,
+        )
+
+    def fetch_cashflow_snapshot(self, account_id: str | None = None, *, days: int = 92) -> TInvestCashflowSnapshot:
+        if not self.token:
+            raise RuntimeError("T_INVEST_TOKEN is not configured")
+
+        selected_account_id = (account_id or "").strip() or self._default_account_id()
+        portfolio = self._post("tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio", {"accountId": selected_account_id})
+        from_dt = datetime.now(UTC)
+        to_dt = from_dt + timedelta(days=days)
+        events: list[dict[str, Any]] = []
+        for item in portfolio.get("positions", []):
+            if not self._is_bond_position(item):
+                continue
+            instrument_uid = str(item.get("instrumentUid") or item.get("instrument_uid") or "").strip()
+            bond = self._fetch_bond(instrument_uid) if instrument_uid else {}
+            quantity = quotation_to_float(item.get("quantity")) or 0
+            if quantity <= 0:
+                continue
+            figi = item.get("figi") or bond.get("figi")
+            if not figi:
+                continue
+            name = bond.get("name") or item.get("name") or item.get("ticker") or item.get("figi") or "Облигация"
+            currency = bond.get("currency") or money_currency(item.get("currentPrice") or item.get("current_price")) or "rub"
+            events.extend(self._cashflow_coupon_events(figi, name, quantity, currency, from_dt, to_dt))
+            principal_events = self._cashflow_principal_events(instrument_uid or figi, name, quantity, currency, from_dt, to_dt)
+            if principal_events:
+                events.extend(principal_events)
+            else:
+                maturity_event = self._cashflow_maturity_fallback(bond, name, quantity, currency, from_dt, to_dt)
+                if maturity_event:
+                    events.append(maturity_event)
+        return TInvestCashflowSnapshot(
+            fetched_at=from_dt.isoformat(timespec="seconds"),
+            account_id=selected_account_id,
+            events=sorted(events, key=lambda event: (event["date"], event["type"], event["name"])),
         )
 
     def _default_account_id(self) -> str:
@@ -94,18 +137,14 @@ class TInvestClient:
         if not nominal:
             return None
         try:
-            response = self._post(
-                "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetBondCoupons",
-                {
-                    "figi": item.get("figi") or bond.get("figi"),
-                    "from": datetime.now(UTC).isoformat(timespec="seconds"),
-                    "to": (datetime.now(UTC) + timedelta(days=370)).isoformat(timespec="seconds"),
-                },
+            coupons = self._fetch_bond_coupons(
+                item.get("figi") or bond.get("figi"),
+                datetime.now(UTC),
+                datetime.now(UTC) + timedelta(days=370),
             )
         except httpx.HTTPError:
             return None
 
-        coupons = response.get("events", []) or response.get("coupons", [])
         if not coupons:
             return None
         coupon = coupons[0]
@@ -119,6 +158,111 @@ class TInvestClient:
         if frequency:
             return coupon_payment / nominal * frequency * 100
         return None
+
+    def _cashflow_coupon_events(
+        self,
+        figi: str,
+        name: str,
+        quantity: float,
+        currency: str,
+        from_dt: datetime,
+        to_dt: datetime,
+    ) -> list[dict[str, Any]]:
+        try:
+            coupons = self._fetch_bond_coupons(figi, from_dt, to_dt)
+        except httpx.HTTPError:
+            return []
+        events: list[dict[str, Any]] = []
+        for coupon in coupons:
+            event_date = normalize_date(coupon.get("couponDate") or coupon.get("coupon_date") or coupon.get("date"))
+            amount_per_bond = money_to_float(coupon.get("payOneBond") or coupon.get("pay_one_bond"))
+            if not event_date or amount_per_bond is None:
+                continue
+            events.append(
+                {
+                    "date": event_date,
+                    "type": "coupon",
+                    "name": name,
+                    "amount": amount_per_bond * quantity,
+                    "currency": currency,
+                }
+            )
+        return events
+
+    def _cashflow_principal_events(
+        self,
+        instrument_id: str,
+        name: str,
+        quantity: float,
+        currency: str,
+        from_dt: datetime,
+        to_dt: datetime,
+    ) -> list[dict[str, Any]]:
+        try:
+            response = self._post(
+                "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetBondEvents",
+                {"instrumentId": instrument_id, "from": from_dt.isoformat(timespec="seconds"), "to": to_dt.isoformat(timespec="seconds")},
+            )
+        except httpx.HTTPError:
+            return []
+        raw_events = response.get("events", []) or response.get("bondEvents", []) or response.get("bond_events", [])
+        events: list[dict[str, Any]] = []
+        for item in raw_events:
+            event_type = normalize_bond_event_type(item.get("eventType") or item.get("event_type") or item.get("type"))
+            if event_type not in {"amortization", "maturity"}:
+                continue
+            event_date = normalize_date(item.get("eventDate") or item.get("event_date") or item.get("date"))
+            amount_per_bond = money_to_float(
+                item.get("payOneBond")
+                or item.get("pay_one_bond")
+                or item.get("amount")
+                or item.get("value")
+            )
+            if not event_date or amount_per_bond is None:
+                continue
+            events.append(
+                {
+                    "date": event_date,
+                    "type": event_type,
+                    "name": name,
+                    "amount": amount_per_bond * quantity,
+                    "currency": currency,
+                }
+            )
+        return events
+
+    def _cashflow_maturity_fallback(
+        self,
+        bond: dict[str, Any],
+        name: str,
+        quantity: float,
+        currency: str,
+        from_dt: datetime,
+        to_dt: datetime,
+    ) -> dict[str, Any] | None:
+        maturity_date = normalize_date(bond.get("maturityDate") or bond.get("maturity_date"))
+        nominal = money_to_float(bond.get("nominal"))
+        if not maturity_date or nominal is None:
+            return None
+        parsed = parse_datetime(f"{maturity_date}T00:00:00+00:00")
+        if not parsed or not (from_dt.date() <= parsed.date() <= to_dt.date()):
+            return None
+        return {
+            "date": maturity_date,
+            "type": "maturity",
+            "name": name,
+            "amount": nominal * quantity,
+            "currency": currency,
+        }
+
+    def _fetch_bond_coupons(self, figi: str | None, from_dt: datetime, to_dt: datetime) -> list[dict[str, Any]]:
+        if not figi:
+            return []
+        response = self._post(
+            "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetBondCoupons",
+            {"figi": figi, "from": from_dt.isoformat(timespec="seconds"), "to": to_dt.isoformat(timespec="seconds")},
+        )
+        return response.get("events", []) or response.get("coupons", [])
 
     @staticmethod
     def _is_bond_position(item: dict[str, Any]) -> bool:
@@ -187,3 +331,14 @@ def parse_datetime(value: Any) -> datetime | None:
         return datetime.fromisoformat(text)
     except ValueError:
         return None
+
+
+def normalize_bond_event_type(value: Any) -> str | None:
+    text = str(value or "").upper()
+    if "AMORT" in text or "AMORTIZATION" in text:
+        return "amortization"
+    if "MTY" in text or "MATURITY" in text or "REDEMPTION" in text:
+        return "maturity"
+    if "CPN" in text or "COUPON" in text:
+        return "coupon"
+    return None
