@@ -226,9 +226,19 @@ class IdeaManagerApp:
             )
             return
 
-        if data.startswith("bond:append:"):
+        if data.startswith("bond:append-text:"):
             context.user_data["pending_action"] = "bond_append_candidate"
             context.user_data["pending_bond_append_action"] = data
+            screen = self.bond_radar.handle_action(data)
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
+        if data.startswith("bond:edit:"):
+            context.user_data["pending_action"] = "bond_edit_field"
+            context.user_data["pending_bond_edit_action"] = data
             screen = self.bond_radar.handle_action(data)
             await query.message.reply_text(
                 screen["text"][:4000],
@@ -317,6 +327,7 @@ class IdeaManagerApp:
             "append_context_text",
             "bond_manual_import",
             "bond_append_candidate",
+            "bond_edit_field",
         }:
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
@@ -366,6 +377,28 @@ class IdeaManagerApp:
                     text,
                     source_channel=self._bond_manual_source_channel_from_payload(payload, source_url),
                     source_url=source_url,
+                )
+                self._reset_flow(context)
+                await update.message.reply_text(
+                    screen["text"][:4000],
+                    reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+                )
+                return
+
+            if pending_action == "bond_edit_field":
+                edit_action = context.user_data.get("pending_bond_edit_action")
+                if not edit_action:
+                    self._reset_flow(context)
+                    await update.message.reply_text(
+                        "Не нашёл поле для редактирования. Открой карточку заново.",
+                        reply_markup=self._main_menu(),
+                    )
+                    return
+                manual_value = payload["normalized_text"] or payload["raw_input"]
+                screen = await asyncio.to_thread(
+                    self.bond_radar.edit_manual_field,
+                    edit_action,
+                    manual_value,
                 )
                 self._reset_flow(context)
                 await update.message.reply_text(
@@ -1041,6 +1074,8 @@ class IdeaManagerApp:
         context.user_data.pop("pending_project", None)
         context.user_data.pop("pending_idea_id", None)
         context.user_data.pop("pending_context_id", None)
+        context.user_data.pop("pending_bond_append_action", None)
+        context.user_data.pop("pending_bond_edit_action", None)
 
     @staticmethod
     def _author_name(update: Update) -> str:

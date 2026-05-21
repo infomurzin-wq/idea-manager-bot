@@ -34,6 +34,57 @@ VALID_SORTS = {
     "rating_desc",
     "rating_asc",
 }
+EDITABLE_FIELDS = [
+    ("issuer", "Эмитент"),
+    ("issue_name", "Выпуск"),
+    ("isin", "ISIN"),
+    ("rating", "Рейтинг"),
+    ("coupon", "Купон"),
+    ("ytm", "YTM"),
+    ("coupon_frequency_per_year", "Выплат в год"),
+    ("coupon_type", "Тип купона"),
+    ("price", "Цена"),
+    ("book_building_date", "Сбор заявок"),
+    ("placement_date", "Размещение"),
+    ("maturity_date", "Погашение / срок"),
+    ("offer", "Оферта"),
+    ("amortization", "Амортизация"),
+    ("issue_size", "Объем"),
+    ("qualified_only", "Для квалов"),
+]
+EDITABLE_FIELD_LABELS = dict(EDITABLE_FIELDS)
+EDITABLE_FIELD_IDS = {
+    "issuer": "iss",
+    "issue_name": "issue",
+    "isin": "isin",
+    "rating": "rate",
+    "coupon": "cpn",
+    "ytm": "ytm",
+    "coupon_frequency_per_year": "freq",
+    "coupon_type": "ctype",
+    "price": "price",
+    "book_building_date": "book",
+    "placement_date": "place",
+    "maturity_date": "mat",
+    "offer": "offer",
+    "amortization": "amort",
+    "issue_size": "size",
+    "qualified_only": "qual",
+}
+EDITABLE_FIELDS_BY_ID = {value: key for key, value in EDITABLE_FIELD_IDS.items()}
+EDIT_FIELD_HINTS = {
+    "isin": "Например: RU000A10CJ92",
+    "coupon": "Например: 18.5% или КС+3.25%",
+    "ytm": "Например: 19.4%",
+    "coupon_frequency_per_year": "Например: 12",
+    "coupon_type": "fixed, floating или нужно проверить",
+    "book_building_date": "Например: 25.05.2026",
+    "placement_date": "Например: 28.05.2026",
+    "maturity_date": "Например: 05.07.2035 или 3 years",
+    "offer": "Например: put-оферта 23.08.2027 или нет",
+    "amortization": "Например: с 03.06.2026 по 4% каждый месяц или нет",
+    "qualified_only": "да или нет",
+}
 
 
 def main() -> None:
@@ -83,10 +134,20 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         key = resolve_action_key(records, value)
         return isin_screen(records, key, origin=origin)
 
+    if action.startswith("bond:append-text:"):
+        origin, value = parse_origin_and_key(action.removeprefix("bond:append-text:"))
+        key = resolve_action_key(records, value)
+        return append_prompt_screen(records, key, origin=origin)
+
     if action.startswith("bond:append:"):
         origin, value = parse_origin_and_key(action.removeprefix("bond:append:"))
         key = resolve_action_key(records, value)
-        return append_prompt_screen(records, key, origin=origin)
+        return edit_menu_screen(records, key, origin=origin)
+
+    if action.startswith("bond:edit:"):
+        origin, field, value = parse_origin_field_and_key(action.removeprefix("bond:edit:"))
+        key = resolve_action_key(records, value)
+        return edit_field_prompt_screen(records, key, field, origin=origin)
 
     if action.startswith("bond:watch:"):
         origin, value = parse_origin_and_key(action.removeprefix("bond:watch:"))
@@ -215,8 +276,63 @@ def isin_screen(
     if not isin:
         text = f"ISIN для {title} пока не найден."
     else:
-        text = f"ISIN для {title}\n\n{isin}"
+        text = str(isin)
     return {"text": text, "buttons": detail_back_buttons(record, origin=origin)}
+
+
+def edit_menu_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    origin: str | None = None,
+) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    short_id = short_callback_id(record["storage"]["key"])
+    status = record["storage"]["status"]
+    back_status, back_page, back_sort = back_target(origin, status)
+    encoded_origin = origin_token(back_status, back_page, back_sort)
+    rows: list[list[dict[str, str]]] = []
+    for left, right in zip(EDITABLE_FIELDS[::2], EDITABLE_FIELDS[1::2], strict=False):
+        row = [button(left[1], edit_field_action(encoded_origin, left[0], short_id))]
+        if right:
+            row.append(button(right[1], edit_field_action(encoded_origin, right[0], short_id)))
+        rows.append(row)
+    rows.append([button("Распарсить фрагмент", f"bond:append-text:{encoded_origin}:{short_id}")])
+    rows.append([button("Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
+    rows.append(detail_back_row(back_status, back_page, back_sort))
+    return {
+        "text": (
+            f"Редактировать карточку: {title}\n\n"
+            "Выбери поле и отправь следующим сообщением новое значение. "
+            "Для очистки поля отправь `пусто`."
+        ),
+        "buttons": rows,
+    }
+
+
+def edit_field_prompt_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    field: str,
+    *,
+    origin: str | None = None,
+) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    if field not in EDITABLE_FIELD_LABELS:
+        return show_screen(records, key, prefix=f"Поле недоступно для редактирования: {field}", origin=origin)
+    current_value = editable_field_value(record, field)
+    label = EDITABLE_FIELD_LABELS[field]
+    hint = EDIT_FIELD_HINTS.get(field, "Отправь новое значение одним сообщением.")
+    return {
+        "text": (
+            f"Редактировать поле: {label}\n\n"
+            f"Текущее значение: {format_candidate.display(current_value)}\n"
+            f"{hint}\n\n"
+            "Для очистки поля отправь `пусто`."
+        ),
+        "buttons": detail_back_buttons(record, origin=origin),
+    }
 
 
 def append_prompt_screen(
@@ -368,6 +484,28 @@ def parse_origin_and_key(value: str) -> tuple[str | None, str]:
     if separator and parse_origin_token(origin) is not None:
         return origin, key
     return None, value
+
+
+def parse_origin_field_and_key(value: str) -> tuple[str | None, str, str]:
+    parts = value.split(":")
+    if len(parts) >= 3 and parse_origin_token(parts[0]) is not None:
+        return parts[0], canonical_edit_field(parts[1]), ":".join(parts[2:])
+    if len(parts) >= 2:
+        return None, canonical_edit_field(parts[0]), ":".join(parts[1:])
+    return None, "", value
+
+
+def editable_field_value(record: dict[str, Any], field: str) -> Any:
+    path = candidate_store.EDITABLE_FIELD_PATHS[field]
+    return record["candidate"][path[0]].get(path[1])
+
+
+def edit_field_action(origin: str, field: str, short_id: str) -> str:
+    return f"bond:edit:{origin}:{EDITABLE_FIELD_IDS[field]}:{short_id}"
+
+
+def canonical_edit_field(value: str) -> str:
+    return EDITABLE_FIELDS_BY_ID.get(value, value)
 
 
 def parse_list_action(action: str) -> tuple[str, int, str] | None:

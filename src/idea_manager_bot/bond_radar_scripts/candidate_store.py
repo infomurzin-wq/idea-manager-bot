@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +18,44 @@ import deduplicate_candidates
 
 VALID_STATUSES = {"new", "watchlist", "rejected"}
 DEFAULT_STORE_PATH = Path("04_projects/bond-radar-bot/data/candidates_store.jsonl")
+EDITABLE_FIELD_PATHS = {
+    "issuer": ("instrument", "issuer"),
+    "issue_name": ("instrument", "issue_name"),
+    "isin": ("instrument", "isin"),
+    "rating": ("instrument", "rating"),
+    "coupon": ("terms", "coupon"),
+    "ytm": ("terms", "ytm"),
+    "coupon_frequency_per_year": ("terms", "coupon_frequency_per_year"),
+    "coupon_type": ("terms", "coupon_type"),
+    "price": ("terms", "price"),
+    "book_building_date": ("terms", "book_building_date"),
+    "placement_date": ("terms", "placement_date"),
+    "first_trading_date": ("terms", "first_trading_date"),
+    "maturity_date": ("terms", "maturity_date"),
+    "offer": ("terms", "offer"),
+    "amortization": ("terms", "amortization"),
+    "issue_size": ("terms", "issue_size"),
+    "qualified_only": ("terms", "qualified_only"),
+}
+CRITICAL_FIELDS = {
+    "issuer",
+    "coupon",
+    "ytm",
+    "book_building_date",
+    "placement_date",
+    "maturity_date",
+    "offer",
+    "amortization",
+    "coupon_frequency_per_year",
+    "coupon_type",
+    "rating",
+}
+EDITABLE_RED_FLAGS = {
+    "floating_coupon",
+    "offer_present_or_needs_review",
+    "amortization_present_or_needs_review",
+    "qualified_investors_only",
+}
 
 
 @dataclass
@@ -247,6 +286,37 @@ def merge_candidate_into_record(
     return record
 
 
+def update_candidate_field(
+    records: dict[str, dict[str, Any]],
+    lookup_key: str,
+    field: str,
+    raw_value: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    if field not in EDITABLE_FIELD_PATHS:
+        raise ValueError(f"Unsupported editable field: {field}")
+
+    matched_key = find_existing_record_key(records, lookup_key)
+    if matched_key is None:
+        raise KeyError(f"Candidate not found: {lookup_key}")
+
+    record = records[matched_key]
+    candidate = record["candidate"]
+    section, key = EDITABLE_FIELD_PATHS[field]
+    value = normalize_manual_field_value(field, raw_value)
+    candidate[section][key] = value
+    if field == "coupon":
+        candidate["terms"]["coupon_raw"] = value
+    elif field == "ytm":
+        candidate["terms"]["ytm_raw"] = value
+
+    refresh_manual_assessment(candidate)
+    normalize_candidate_for_store(candidate)
+    record["storage"]["updated_at"] = iso_timestamp(now)
+    return record
+
+
 def list_candidates(
     records: dict[str, dict[str, Any]],
     *,
@@ -340,6 +410,60 @@ def normalize_candidate_for_store(candidate: dict[str, Any]) -> None:
     candidate["assessment"]["red_flags"] = sorted(candidate["assessment"].get("red_flags", []))
     candidate["assessment"]["missing_fields"] = sorted(candidate["assessment"].get("missing_fields", []))
     candidate["dedup"]["matched_keys"] = sorted(set(candidate["dedup"].get("matched_keys", [])))
+
+
+def normalize_manual_field_value(field: str, raw_value: str) -> Any:
+    value = raw_value.strip()
+    lowered = value.lower()
+    if lowered in {"", "-", "пусто", "очистить", "clear", "null"}:
+        return None
+    if field == "isin":
+        return reformat_isin(value)
+    if field == "coupon_frequency_per_year":
+        match = next(iter(re.findall(r"\d+", value)), None)
+        return int(match) if match else value
+    if field == "coupon_type":
+        if lowered in {"фикс", "фиксированный", "fixed"}:
+            return "fixed"
+        if lowered in {"флоатер", "плавающий", "floating"}:
+            return "floating"
+        return "unknown" if lowered in {"unknown", "неизвестно", "нужно проверить"} else value
+    if field in {"offer", "amortization"} and lowered in {"нет", "no", "без", "отсутствует"}:
+        return "no"
+    if field == "qualified_only":
+        if lowered in {"да", "yes", "true", "1", "квал", "только квалы"}:
+            return True
+        if lowered in {"нет", "no", "false", "0", "неквал", "для всех"}:
+            return False
+    return value
+
+
+def reformat_isin(value: str) -> str:
+    return "".join(value.split()).upper()
+
+
+def refresh_manual_assessment(candidate: dict[str, Any]) -> None:
+    instrument = candidate["instrument"]
+    terms = candidate["terms"]
+    missing = set(candidate["assessment"].get("missing_fields", []))
+    for field in CRITICAL_FIELDS:
+        source = instrument if field in instrument else terms
+        if source.get(field) in (None, "", "unknown"):
+            missing.add(field)
+        else:
+            missing.discard(field)
+    candidate["assessment"]["missing_fields"] = sorted(missing)
+
+    red_flags = set(candidate["assessment"].get("red_flags", [])) - EDITABLE_RED_FLAGS
+    if terms.get("coupon_type") == "floating":
+        red_flags.add("floating_coupon")
+    if terms.get("offer") and terms.get("offer") != "no":
+        red_flags.add("offer_present_or_needs_review")
+    if terms.get("amortization") and terms.get("amortization") != "no":
+        red_flags.add("amortization_present_or_needs_review")
+    if terms.get("qualified_only") is True:
+        red_flags.add("qualified_investors_only")
+    candidate["assessment"]["red_flags"] = sorted(red_flags)
 
 
 def find_existing_key(records: dict[str, dict[str, Any]], candidate: dict[str, Any]) -> str | None:

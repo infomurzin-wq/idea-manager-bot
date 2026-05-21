@@ -183,6 +183,39 @@ class BondRadarBridge:
         except Exception as exc:  # noqa: BLE001
             return self._unavailable_screen(f"Не удалось дополнить карточку облигации: {exc}")
 
+    def edit_manual_field(
+        self,
+        edit_action: str,
+        text: str,
+    ) -> dict[str, Any]:
+        if not text.strip():
+            return {
+                "text": "Не получил новое значение поля.",
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+
+        try:
+            self._ensure_store_exists()
+            candidate_store = self._import_from_scripts_dir("candidate_store")
+            telegram_actions = self._import_from_scripts_dir("telegram_actions")
+
+            origin, field, value = telegram_actions.parse_origin_field_and_key(
+                edit_action.removeprefix("bond:edit:")
+            )
+            records = candidate_store.load_store(self.store_path)
+            key = telegram_actions.resolve_action_key(records, value)
+            record = candidate_store.update_candidate_field(records, key, field, text, now=datetime.now(UTC))
+            candidate_store.write_store(self.store_path, records)
+            label = telegram_actions.EDITABLE_FIELD_LABELS.get(field, field)
+            return telegram_actions.show_screen(
+                records,
+                record["storage"]["key"],
+                prefix=f"Поле обновлено: {label}.",
+                origin=origin,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._unavailable_screen(f"Не удалось обновить поле карточки: {exc}")
+
     @staticmethod
     def _select_append_candidate(
         candidate_store: Any,

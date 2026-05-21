@@ -277,8 +277,82 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
             isin_screen = bridge.handle_action(isin_callback)
 
-            self.assertIn("ISIN для ПР-Лизинг 002Р-03", isin_screen["text"])
-            self.assertIn("RU000A10CJ92", isin_screen["text"])
+            self.assertEqual("RU000A10CJ92", isin_screen["text"])
+
+    def test_bridge_opens_edit_menu_from_append_button(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            import_screen = bridge.import_manual_text(
+                "ПР-Лизинг 002Р-03 (RU000A10CJ92)\n"
+                "Купон: 20%, ежемесячно\n"
+                "YTM: 25,2%\n",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+            edit_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:append:")
+            )
+
+            edit_screen = bridge.handle_action(edit_callback)
+
+            self.assertIn("Редактировать карточку: ПР-Лизинг 002Р-03", edit_screen["text"])
+            callbacks = [
+                item["callback_data"]
+                for row in edit_screen["buttons"]
+                for item in row
+            ]
+            self.assertTrue(any(callback.startswith("bond:edit:") for callback in callbacks))
+            self.assertTrue(any(callback.startswith("bond:append-text:") for callback in callbacks))
+
+    def test_bridge_edits_manual_card_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            import_screen = bridge.import_manual_text(
+                "ПР-Лизинг 002Р-03 (RU000A10CJ92)\n"
+                "Купон: 20%, ежемесячно\n"
+                "YTM: 25,2%\n",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+            edit_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:append:")
+            )
+            edit_screen = bridge.handle_action(edit_callback)
+            ytm_callback = next(
+                item["callback_data"]
+                for row in edit_screen["buttons"]
+                for item in row
+                if item["text"] == "YTM"
+            )
+
+            updated_screen = bridge.edit_manual_field(ytm_callback, "19.4%")
+
+            self.assertIn("Поле обновлено: YTM.", updated_screen["text"])
+            self.assertIn("YTM: 19.4%", updated_screen["text"])
 
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
