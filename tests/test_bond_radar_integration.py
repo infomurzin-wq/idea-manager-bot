@@ -11,6 +11,7 @@ from telegram import Chat, Message, MessageOriginChannel
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS
 from idea_manager_bot.config import Settings
+from idea_manager_bot.link_reader import LinkReader
 
 
 MYCODEX_ROOT = Path(__file__).resolve().parents[2]
@@ -362,17 +363,11 @@ class BondRadarIntegrationTest(unittest.TestCase):
             IdeaManagerApp._bond_manual_source_channel("https://t.me/probonds/123"),
         )
 
-    def test_auto_bond_import_text_filter_accepts_bond_posts(self) -> None:
-        self.assertTrue(
-            IdeaManagerApp._text_might_be_bond_post(
-                "ПР-Лизинг 002Р-03 RU000A10CJ92\n"
-                "Купон: 20%, ежемесячно\n"
-                "YTM: 25,2%"
-            )
+    def test_bond_manual_import_source_channel_handles_telegram_web_post_url(self) -> None:
+        self.assertEqual(
+            "@probonds",
+            IdeaManagerApp._bond_manual_source_channel("https://t.me/s/probonds/123"),
         )
-
-    def test_auto_bond_import_text_filter_rejects_regular_messages(self) -> None:
-        self.assertFalse(IdeaManagerApp._text_might_be_bond_post("Надо посмотреть статью про Python и n8n"))
 
     def test_bond_manual_import_source_channel_uses_web_host_for_regular_urls(self) -> None:
         self.assertEqual(
@@ -398,6 +393,12 @@ class BondRadarIntegrationTest(unittest.TestCase):
                     "https://t.me/probonds/123",
                 ]
             ),
+        )
+
+    def test_first_telegram_post_url_accepts_web_post_links(self) -> None:
+        self.assertEqual(
+            "https://t.me/s/probonds/123",
+            IdeaManagerApp._first_telegram_post_url(["https://t.me/s/probonds/123"]),
         )
 
     def test_telegram_forward_source_builds_public_channel_post_url(self) -> None:
@@ -428,6 +429,25 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn("https://example.com/post", text)
         self.assertIn("Полипласт П02-БО-99", text)
+
+    def test_link_reader_extracts_public_telegram_post_text(self) -> None:
+        html = """
+        <html><body>
+          <div class="tgme_widget_message_text js-message_text" dir="auto">
+            ПР-Лизинг 002Р-03 (RU000A10CJ92)<br/>
+            Купон: 20%, ежемесячно<br/>
+            YTM: 25,2%
+          </div>
+          <div class="tgme_widget_message_footer">Open in Telegram</div>
+        </body></html>
+        """
+
+        text = LinkReader._extract_telegram_post_text(html)
+
+        self.assertIn("ПР-Лизинг 002Р-03 (RU000A10CJ92)", text)
+        self.assertIn("Купон: 20%, ежемесячно", text)
+        self.assertIn("YTM: 25,2%", text)
+        self.assertNotIn("Open in Telegram", text)
 
     def test_reject_from_watchlist_keeps_back_navigation_to_watchlist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

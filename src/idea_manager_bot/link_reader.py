@@ -111,7 +111,7 @@ class LinkReader:
             )
 
         decoded = raw_bytes.decode("utf-8", errors="ignore")
-        extracted = self._extract_readable_text(decoded)
+        extracted = self._extract_telegram_post_text(decoded) or self._extract_readable_text(decoded)
         if not extracted:
             return LinkReadResult(
                 url=url,
@@ -141,3 +141,24 @@ class LinkReader:
         text = unescape(text)
         text = re.sub(r"\s+", " ", text).strip()
         return text
+
+    @staticmethod
+    def _extract_telegram_post_text(html: str) -> str:
+        blocks = re.findall(
+            r'(?is)<div[^>]+class="[^"]*\btgme_widget_message_text\b[^"]*"[^>]*>(.*?)</div>',
+            html,
+        )
+        if not blocks:
+            return ""
+
+        texts = []
+        for block in blocks:
+            text = re.sub(r"(?i)<br\s*/?>", "\n", block)
+            text = re.sub(r"(?s)<[^>]+>", " ", text)
+            text = unescape(text)
+            text = re.sub(r"[ \t\r\f\v]+", " ", text)
+            text = re.sub(r"\n\s+", "\n", text)
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()
+            if text:
+                texts.append(text)
+        return "\n\n".join(texts)
