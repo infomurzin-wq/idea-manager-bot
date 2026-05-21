@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from html import unescape
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import certifi
 import httpx
@@ -23,6 +24,22 @@ class LinkReadResult:
 
 class LinkReader:
     def read(self, url: str) -> LinkReadResult:
+        errors: list[str] = []
+        for read_url in self._candidate_urls(url):
+            result = self._read_once(read_url)
+            if result.status == "success":
+                result.url = url
+                return result
+            if result.error_message:
+                errors.append(result.error_message)
+
+        return LinkReadResult(
+            url=url,
+            status="fetch_failed",
+            error_message=self._combine_errors(*errors),
+        )
+
+    def _read_once(self, url: str) -> LinkReadResult:
         urllib_result = self._read_via_urllib(url)
         if urllib_result.status == "success":
             return urllib_result
@@ -40,6 +57,37 @@ class LinkReader:
             status="fetch_failed",
             error_message=combined_error,
         )
+
+    @classmethod
+    def _candidate_urls(cls, url: str) -> list[str]:
+        embed_url = cls._telegram_embed_url(url)
+        if embed_url and embed_url != url:
+            return [embed_url, url]
+        return [url]
+
+    @staticmethod
+    def _telegram_embed_url(url: str) -> str | None:
+        parsed = urlparse(url)
+        host = parsed.netloc.replace("www.", "")
+        if host not in {"t.me", "telegram.me"}:
+            return None
+
+        path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+        if len(path_parts) >= 3 and path_parts[0] == "s":
+            channel, post_id = path_parts[1], path_parts[2]
+            embed_path = f"/{channel}/{post_id}"
+        elif len(path_parts) >= 2:
+            channel, post_id = path_parts[0], path_parts[1]
+            embed_path = f"/{channel}/{post_id}"
+        else:
+            return None
+
+        if not post_id.isdigit():
+            return None
+
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query.update({"embed": "1", "mode": "tme"})
+        return urlunparse(parsed._replace(path=embed_path, query=urlencode(query), fragment=""))
 
     def _read_via_urllib(self, url: str) -> LinkReadResult:
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -126,8 +174,8 @@ class LinkReader:
         )
 
     @staticmethod
-    def _combine_errors(first_error: str | None, second_error: str | None) -> str:
-        errors = [item for item in [first_error, second_error] if item]
+    def _combine_errors(*raw_errors: str | None) -> str:
+        errors = [item for item in raw_errors if item]
         if not errors:
             return "Unknown fetch error"
         return " | ".join(errors)[:500]

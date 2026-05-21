@@ -449,6 +449,21 @@ class BondRadarIntegrationTest(unittest.TestCase):
         self.assertIn("YTM: 25,2%", text)
         self.assertNotIn("Open in Telegram", text)
 
+    def test_link_reader_prefers_telegram_embed_url_for_post_links(self) -> None:
+        self.assertEqual(
+            [
+                "https://t.me/probonds/16341?embed=1&mode=tme",
+                "https://t.me/probonds/16341",
+            ],
+            LinkReader._candidate_urls("https://t.me/probonds/16341"),
+        )
+
+    def test_link_reader_rewrites_telegram_web_post_link_to_embed_url(self) -> None:
+        self.assertEqual(
+            "https://t.me/probonds/16341?embed=1&mode=tme",
+            LinkReader._telegram_embed_url("https://t.me/s/probonds/16341"),
+        )
+
     def test_reject_from_watchlist_keeps_back_navigation_to_watchlist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             store_path = Path(tmp_dir) / "candidates_store.jsonl"
