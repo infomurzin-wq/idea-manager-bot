@@ -164,7 +164,7 @@ def build_card(post: SourcePost, block: CandidateBlock, text: str, default_year:
     coupon_type = extract_coupon_type(lowered, text)
     coupon_frequency = extract_coupon_frequency(lowered)
     offer = extract_offer(text)
-    amortization = extract_amortization(lowered)
+    amortization = extract_amortization(text)
     coupon_terms = extract_coupon_terms(text)
     ytm_terms = extract_ytm_terms(text)
 
@@ -238,7 +238,11 @@ def split_candidate_blocks(text: str) -> list[CandidateBlock]:
         return [CandidateBlock(1, text)]
 
     if count_isin_like(text) > 1:
-        blocks = [CandidateBlock(index, paragraph) for index, paragraph in enumerate(paragraphs, start=1) if "ISIN" in paragraph.upper()]
+        blocks = [
+            CandidateBlock(index, paragraph)
+            for index, paragraph in enumerate(paragraphs, start=1)
+            if count_isin_like(paragraph) > 0
+        ]
         if blocks:
             return blocks
 
@@ -344,7 +348,10 @@ def is_title_context_paragraph(paragraph: str) -> bool:
 
 def is_supporting_terms_paragraph(candidate: str, anchor: str) -> bool:
     lowered = candidate.lower()
+    anchor_lowered = anchor.lower()
     if re.search(r"размещени[ея]|сбор заявок|сбор книги", lowered) and not is_structured_terms_block(candidate):
+        return True
+    if "амортизац" in lowered and "амортизац" in anchor_lowered:
         return True
     issuer = extract_issuer(anchor)
     if issuer and issuer.lower() in lowered and ("ytm" in lowered or "ставка купона" in lowered):
@@ -660,11 +667,52 @@ def dedupe_preserve_order(values: list[str]) -> list[str]:
     return result
 
 
-def extract_amortization(lowered: str) -> str | None:
+def extract_amortization(text: str) -> str | None:
+    lowered = text.lower()
     if "амортизация не предусмотрена" in lowered or "без амортизац" in lowered or "амортизация: нет" in lowered:
         return "no"
-    match = re.search(r"амортизац[^.;\n]{0,80}", lowered)
-    return clean_sentence(match.group(0)) if match else None
+    if "нет амортизац" in lowered:
+        return "no"
+
+    normalized = extract_structured_amortization(text)
+    if normalized:
+        return "; ".join(normalized)
+
+    if "есть амортизац" in lowered:
+        return "есть, детали нужно проверить"
+
+    match = re.search(r"амортизац[^.;\n]{0,120}", text, re.IGNORECASE)
+    return clean_sentence(match.group(0)).lower() if match else None
+
+
+def extract_structured_amortization(text: str) -> list[str]:
+    if "амортизац" not in text.lower():
+        return []
+
+    items: list[str] = []
+    for date_value, percent in re.findall(
+        r"(\d{1,2}\.\d{1,2}\.\d{2,4})\s*(?:-|–|—)\s*(\d{1,3}(?:[,.]\d{1,2})?)\s?%",
+        text,
+    ):
+        items.append(f"{normalize_offer_date(date_value)} - {normalize_percent(percent)}")
+
+    for match in re.finditer(
+        r"амортизац[^.;\n]{0,80}?с\s+(\d{1,2}\.\d{1,2}\.\d{2,4})\s+по\s+(\d{1,3}(?:[,.]\d{1,2})?)\s?%\s+(кажд(?:ый|ые|ого)?\s+\d*\s*мес[а-я.]*)",
+        text,
+        re.IGNORECASE,
+    ):
+        items.append(
+            f"с {normalize_offer_date(match.group(1))} по {normalize_percent(match.group(2))} {clean_sentence(match.group(3).lower())}"
+        )
+
+    for match in re.finditer(
+        r"амортизац[^.;\n]{0,80}?(?:по\s+)?(\d{1,3}(?:[,.]\d{1,2})?)\s?%\s+в\s+([^.;\n]{0,80}?купон[а-я]*)",
+        text,
+        re.IGNORECASE,
+    ):
+        items.append(f"{normalize_percent(match.group(1))} в {clean_sentence(match.group(2).lower())}")
+
+    return dedupe_preserve_order(items)
 
 
 def clean_sentence(value: str) -> str:
