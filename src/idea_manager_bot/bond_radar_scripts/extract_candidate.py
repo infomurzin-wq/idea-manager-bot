@@ -163,7 +163,7 @@ def build_card(post: SourcePost, block: CandidateBlock, text: str, default_year:
     issuer = extract_issuer(text)
     coupon_type = extract_coupon_type(lowered, text)
     coupon_frequency = extract_coupon_frequency(lowered)
-    offer = extract_offer(lowered)
+    offer = extract_offer(text)
     amortization = extract_amortization(lowered)
     coupon_terms = extract_coupon_terms(text)
     ytm_terms = extract_ytm_terms(text)
@@ -585,17 +585,79 @@ def extract_coupon_type(lowered: str, text: str) -> str:
     return "unknown"
 
 
-def extract_offer(lowered: str) -> str | None:
+def extract_offer(text: str) -> str | None:
+    lowered = text.lower()
     if "оферта/погашение" in lowered:
         return None
     if "оферты нет" in lowered or "оферта: нет" in lowered or "без оферты" in lowered or "без оферт" in lowered:
         return "no"
-    offer_dates = re.findall(r"(?:call|put)?-?\s*оферт[аы]?\s*:\s*\d{1,2}\.\d{1,2}\.\d{2,4}", lowered)
-    if offer_dates:
-        return clean_sentence("; ".join(offer_dates))
-    lowered = re.sub(r"доходность\s+к\s+оферте\s*:\s*\d{1,3}(?:[,.]\d{1,2})?\s?%", "", lowered)
-    match = re.search(r"оферт[аы]?(?:\s+put|\s+call)?[^.;\n]{0,80}", lowered)
+
+    normalized_offers = extract_structured_offers(text)
+    if normalized_offers:
+        return "; ".join(normalized_offers)
+
+    cleaned = re.sub(r"доходность\s+к\s+оферте\s*:\s*\d{1,3}(?:[,.]\d{1,2})?\s?%", "", lowered)
+    match = re.search(r"оферт[аы]?(?:\s+put|\s+call)?[^.;\n]{0,80}", cleaned)
     return clean_sentence(match.group(0)) if match else None
+
+
+def extract_structured_offers(text: str) -> list[str]:
+    offers: list[str] = []
+
+    for match in re.finditer(
+        r"(?:(call|put)\s*-?\s*)?оферт[аы]?(?:\s*(put|call))?\s*:\s*(\d{1,2}\.\d{1,2}\.\d{2,4})",
+        text,
+        re.IGNORECASE,
+    ):
+        kind = normalize_offer_kind(match.group(1) or match.group(2))
+        offers.append(f"{kind}-оферта: {normalize_offer_date(match.group(3))}")
+
+    for match in re.finditer(
+        r"оферт[аы]?\s*(put|call)?\s*:\s*[^.;\n]{0,80}?(через\s+\d+(?:[,.]\d+)?\s*(?:года|год|лет|мес\.?|месяц[а-я]*))",
+        text,
+        re.IGNORECASE,
+    ):
+        kind = normalize_offer_kind(match.group(1))
+        offers.append(f"{kind}-оферта: {normalize_offer_relative(match.group(2))}")
+
+    for match in re.finditer(
+        r"на\s+(\d+(?:[,.]\d+)?\s*(?:года|год|лет|мес\.?|месяц[а-я]*))\s+до\s+оферты",
+        text,
+        re.IGNORECASE,
+    ):
+        offers.append(f"оферта: через {normalize_offer_relative(match.group(1))}")
+
+    return dedupe_preserve_order(offers)
+
+
+def normalize_offer_kind(value: str | None) -> str:
+    if not value:
+        return "оферта"
+    lowered = value.lower()
+    if lowered == "call":
+        return "call"
+    if lowered == "put":
+        return "put"
+    return "оферта"
+
+
+def normalize_offer_date(value: str) -> str:
+    day, month, year = value.split(".")
+    return normalize_date(day, month, year)
+
+
+def normalize_offer_relative(value: str) -> str:
+    return re.sub(r"\s+", " ", value.replace(",", ".")).strip()
+
+
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    result = []
+    seen = set()
+    for value in values:
+        if value not in seen:
+            result.append(value)
+            seen.add(value)
+    return result
 
 
 def extract_amortization(lowered: str) -> str | None:
