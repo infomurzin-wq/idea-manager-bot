@@ -24,6 +24,7 @@ STATUS_ACTIONS = {
     "bond:list:rejected": "rejected",
 }
 PAGE_SIZE = 10
+RESEARCH_HISTORY_PAGE_SIZE = 2
 DEFAULT_SORT = "default"
 VALID_SORTS = {
     DEFAULT_SORT,
@@ -138,6 +139,11 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         origin, value = parse_origin_and_key(action.removeprefix("bond:research:"))
         key = resolve_action_key(records, value)
         return research_prompt_screen(records, key, origin=origin)
+
+    if action.startswith("bond:research-history:"):
+        origin, value, page = parse_origin_key_and_page(action.removeprefix("bond:research-history:"))
+        key = resolve_action_key(records, value)
+        return research_history_screen(records, key, origin=origin, page=page)
 
     if action.startswith("bond:append-text:"):
         origin, value = parse_origin_and_key(action.removeprefix("bond:append-text:"))
@@ -378,6 +384,63 @@ def research_prompt_screen(
     }
 
 
+def research_history_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    origin: str | None = None,
+    page: int = 1,
+) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    history = list(reversed(record.get("research", [])))
+    short_id = short_callback_id(record["storage"]["key"])
+    status = record["storage"]["status"]
+    back_status, back_page, back_sort = back_target(origin, status)
+    encoded_origin = origin_token(back_status, back_page, back_sort)
+    if not history:
+        return {
+            "text": f"История research: {title}\n\nИстория research пока пустая.",
+            "buttons": [
+                [button("Задать вопрос", f"bond:research:{encoded_origin}:{short_id}")],
+                [button("Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")],
+                detail_back_row(back_status, back_page, back_sort),
+            ],
+        }
+
+    page_count = max(1, (len(history) + RESEARCH_HISTORY_PAGE_SIZE - 1) // RESEARCH_HISTORY_PAGE_SIZE)
+    current_page = min(max(1, page), page_count)
+    offset = (current_page - 1) * RESEARCH_HISTORY_PAGE_SIZE
+    page_items = history[offset : offset + RESEARCH_HISTORY_PAGE_SIZE]
+    lines = [
+        f"История research: {title}",
+        f"Страница {current_page}/{page_count}. Всего вопросов: {len(history)}.",
+        "",
+    ]
+    for index, item in enumerate(page_items, start=offset + 1):
+        created_at = format_research_timestamp(item.get("created_at"))
+        question = compact_multiline(item.get("question"), limit=700)
+        answer = compact_multiline(item.get("answer"), limit=1400)
+        lines.extend(
+            [
+                f"{index}. {created_at}",
+                f"Вопрос: {question}",
+                "",
+                f"Ответ: {answer}",
+                "",
+            ]
+        )
+
+    buttons: list[list[dict[str, str]]] = []
+    pagination = research_history_pagination(encoded_origin, short_id, current_page, page_count)
+    if pagination:
+        buttons.append(pagination)
+    buttons.append([button("Задать вопрос", f"bond:research:{encoded_origin}:{short_id}")])
+    buttons.append([button("Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
+    buttons.append(detail_back_row(back_status, back_page, back_sort))
+    return {"text": "\n".join(lines).strip(), "buttons": buttons}
+
+
 def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list[list[dict[str, str]]]:
     key = record["storage"]["key"]
     short_id = short_callback_id(key)
@@ -399,16 +462,53 @@ def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list
         rows.append([button("В watchlist", f"bond:watch:{encoded_origin}:{short_id}")])
         rows.append([button("Удалить", f"bond:delete:{encoded_origin}:{short_id}")])
 
+    rows.append(
+        [
+            button("Research", f"bond:research:{encoded_origin}:{short_id}"),
+            button("История research", f"bond:research-history:{encoded_origin}:{short_id}"),
+        ]
+    )
+
+    utility_row = [button("Дополнить данные", f"bond:append:{encoded_origin}:{short_id}")]
     isin = record["candidate"]["instrument"].get("isin")
-    utility_row = [
-        button("Research", f"bond:research:{encoded_origin}:{short_id}"),
-        button("Дополнить данные", f"bond:append:{encoded_origin}:{short_id}"),
-    ]
     if isin:
         utility_row.append(button("ISIN отдельно", f"bond:isin:{encoded_origin}:{short_id}"))
     rows.append(utility_row)
     rows.append(detail_back_row(back_status, back_page, back_sort))
     return rows
+
+
+def research_history_pagination(origin: str, short_id: str, page: int, page_count: int) -> list[dict[str, str]]:
+    if page_count <= 1:
+        return []
+    row: list[dict[str, str]] = []
+    if page > 1:
+        row.append(button("← Новее", research_history_action(origin, short_id, page - 1)))
+    if page < page_count:
+        row.append(button("Старше →", research_history_action(origin, short_id, page + 1)))
+    return row
+
+
+def research_history_action(origin: str, short_id: str, page: int = 1) -> str:
+    if page <= 1:
+        return f"bond:research-history:{origin}:{short_id}"
+    return f"bond:research-history:{origin}:{short_id}:{page}"
+
+
+def format_research_timestamp(value: Any) -> str:
+    if not value:
+        return "дата не сохранена"
+    return str(value).replace("T", " ").replace("+00:00", " UTC")
+
+
+def compact_multiline(value: Any, *, limit: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "пусто"
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
 
 
 def detail_back_buttons(record: dict[str, Any], *, origin: str | None = None) -> list[list[dict[str, str]]]:
@@ -512,6 +612,16 @@ def parse_origin_and_key(value: str) -> tuple[str | None, str]:
     if separator and parse_origin_token(origin) is not None:
         return origin, key
     return None, value
+
+
+def parse_origin_key_and_page(value: str) -> tuple[str | None, str, int]:
+    page = 1
+    head, separator, tail = value.rpartition(":")
+    if separator and tail.isdigit():
+        value = head
+        page = max(1, int(tail))
+    origin, key = parse_origin_and_key(value)
+    return origin, key, page
 
 
 def parse_origin_field_and_key(value: str) -> tuple[str | None, str, str]:

@@ -443,6 +443,52 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertEqual("Какие риски проверить?", record["research"][0]["question"])
             self.assertEqual("Ответ fake research", record["research"][0]["answer"])
 
+    def test_bridge_renders_research_history_from_card(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            import_screen = bridge.import_manual_text(
+                "ПР-Лизинг 002Р-03 (RU000A10CJ92)\n"
+                "Купон: 20%, ежемесячно\n"
+                "YTM: 25,2%\n",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+            research_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:research:")
+            )
+            bridge.research_question(research_callback, "Что проверить?", FakeBondResearchLLM())
+            history_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:research-history:")
+            )
+
+            history_screen = bridge.handle_action(history_callback)
+
+            self.assertIn("История research: ПР-Лизинг 002Р-03", history_screen["text"])
+            self.assertIn("Что проверить?", history_screen["text"])
+            self.assertIn("Ответ fake research", history_screen["text"])
+            self.assertTrue(
+                any(
+                    item["callback_data"].startswith("bond:research:")
+                    for row in history_screen["buttons"]
+                    for item in row
+                )
+            )
+
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
             "@probonds",
