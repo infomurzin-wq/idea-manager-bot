@@ -134,6 +134,11 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         key = resolve_action_key(records, value)
         return isin_screen(records, key, origin=origin)
 
+    if action.startswith("bond:research:"):
+        origin, value = parse_origin_and_key(action.removeprefix("bond:research:"))
+        key = resolve_action_key(records, value)
+        return research_prompt_screen(records, key, origin=origin)
+
     if action.startswith("bond:append-text:"):
         origin, value = parse_origin_and_key(action.removeprefix("bond:append-text:"))
         key = resolve_action_key(records, value)
@@ -353,6 +358,26 @@ def append_prompt_screen(
     }
 
 
+def research_prompt_screen(
+    records: dict[str, dict[str, Any]],
+    key: str,
+    *,
+    origin: str | None = None,
+) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    history_count = len(record.get("research", []))
+    return {
+        "text": (
+            f"Research: {title}\n\n"
+            "Отправь следующим сообщением вопрос по этой бумаге. "
+            "Бот возьмет данные карточки, историю research и попробует проверить актуальную информацию через web search.\n\n"
+            f"Сохраненных вопросов по карточке: {history_count}"
+        ),
+        "buttons": detail_back_buttons(record, origin=origin),
+    }
+
+
 def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list[list[dict[str, str]]]:
     key = record["storage"]["key"]
     short_id = short_callback_id(key)
@@ -375,7 +400,10 @@ def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list
         rows.append([button("Удалить", f"bond:delete:{encoded_origin}:{short_id}")])
 
     isin = record["candidate"]["instrument"].get("isin")
-    utility_row = [button("Дополнить данные", f"bond:append:{encoded_origin}:{short_id}")]
+    utility_row = [
+        button("Research", f"bond:research:{encoded_origin}:{short_id}"),
+        button("Дополнить данные", f"bond:append:{encoded_origin}:{short_id}"),
+    ]
     if isin:
         utility_row.append(button("ISIN отдельно", f"bond:isin:{encoded_origin}:{short_id}"))
     rows.append(utility_row)

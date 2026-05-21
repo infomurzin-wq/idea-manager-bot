@@ -246,6 +246,16 @@ class IdeaManagerApp:
             )
             return
 
+        if data.startswith("bond:research:"):
+            context.user_data["pending_action"] = "bond_research"
+            context.user_data["pending_bond_research_action"] = data
+            screen = self.bond_radar.handle_action(data)
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
         if data.startswith("bond:"):
             await self._send_bond_screen(query.message, data)
             return
@@ -328,6 +338,7 @@ class IdeaManagerApp:
             "bond_manual_import",
             "bond_append_candidate",
             "bond_edit_field",
+            "bond_research",
         }:
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
@@ -400,6 +411,29 @@ class IdeaManagerApp:
                     self.bond_radar.edit_manual_field,
                     edit_action,
                     manual_value,
+                )
+                self._reset_flow(context)
+                await update.message.reply_text(
+                    screen["text"][:4000],
+                    reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+                )
+                return
+
+            if pending_action == "bond_research":
+                research_action = context.user_data.get("pending_bond_research_action")
+                if not research_action:
+                    self._reset_flow(context)
+                    await update.message.reply_text(
+                        "Не нашёл карточку для Research Mode. Открой карточку заново.",
+                        reply_markup=self._main_menu(),
+                    )
+                    return
+                question = payload["normalized_text"] or payload["raw_input"]
+                screen = await asyncio.to_thread(
+                    self.bond_radar.research_question,
+                    research_action,
+                    question,
+                    self.llm,
                 )
                 self._reset_flow(context)
                 await update.message.reply_text(
@@ -1111,6 +1145,7 @@ class IdeaManagerApp:
         context.user_data.pop("pending_context_id", None)
         context.user_data.pop("pending_bond_append_action", None)
         context.user_data.pop("pending_bond_edit_action", None)
+        context.user_data.pop("pending_bond_research_action", None)
 
     @staticmethod
     def _author_name(update: Update) -> str:

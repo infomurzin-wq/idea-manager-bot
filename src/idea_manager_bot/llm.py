@@ -87,6 +87,55 @@ class LLMService:
             LOGGER.exception("LLM summarize_context failed, using fallback")
             return self._fallback_summary(text, project)
 
+    def research_bond(self, question: str, card_context: str, history: list[dict] | None = None) -> str:
+        if not self.client:
+            return (
+                "OpenAI API key не настроен, поэтому Research Mode сейчас недоступен. "
+                "Карточка и вопрос сохранены в боте, но внешний поиск и LLM-ответ выполнить нельзя."
+            )
+
+        history_block = self._format_research_history(history or [])
+        prompt = (
+            "Ты аналитический помощник по российским облигациям для личного ресерча пользователя.\n"
+            "Ответь на русском языке. Это не индивидуальная инвестиционная рекомендация.\n"
+            "Используй веб-поиск для актуальной информации, если инструмент доступен.\n"
+            "Опирайся на карточку, но проверяй эмитента, новости, рейтинг, параметры выпуска и риски по открытым источникам.\n"
+            "Если данных не хватает или источник не найден, прямо напиши, что нужно проверить вручную.\n"
+            "Структура ответа:\n"
+            "1. Короткий вывод\n"
+            "2. Что удалось проверить\n"
+            "3. Риски и красные флаги\n"
+            "4. Что спросить/проверить дальше\n"
+            "5. Источники\n\n"
+            f"Карточка:\n{card_context[:6000]}\n\n"
+            f"История research по карточке:\n{history_block}\n\n"
+            f"Вопрос пользователя:\n{question}"
+        )
+        for tool_type in ("web_search", "web_search_preview"):
+            try:
+                response = self.client.responses.create(
+                    model=self.model,
+                    input=prompt,
+                    tools=[{"type": tool_type}],
+                )
+                return (response.output_text or "").strip()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("LLM research_bond failed with tool=%s", tool_type)
+
+        try:
+            response = self.client.responses.create(model=self.model, input=prompt)
+            answer = (response.output_text or "").strip()
+            return (
+                "Веб-поиск не сработал, ниже ответ только по данным карточки и знаниям модели.\n\n"
+                f"{answer}"
+            ).strip()
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("LLM research_bond failed")
+            return (
+                "Не удалось выполнить Research Mode через OpenAI API. "
+                "Попробуй повторить вопрос позже или проверь настройки OPENAI_API_KEY/модели."
+            )
+
     def transcribe_audio(self, file_path: Path) -> str:
         if not self.client:
             raise RuntimeError("OPENAI_API_KEY is not configured")
@@ -97,6 +146,20 @@ class LLMService:
                 file=audio_file,
             )
         return transcript.text.strip()
+
+    @staticmethod
+    def _format_research_history(history: list[dict]) -> str:
+        if not history:
+            return "- истории пока нет"
+        lines: list[str] = []
+        for item in history[-5:]:
+            question = str(item.get("question") or "").strip()
+            answer = str(item.get("answer") or "").strip()
+            created_at = str(item.get("created_at") or "").strip()
+            lines.append(f"- {created_at} Вопрос: {question[:500]}")
+            if answer:
+                lines.append(f"  Ответ: {answer[:1200]}")
+        return "\n".join(lines)
 
     @staticmethod
     def _fallback_analysis(text: str, project: ProjectTarget, comments: list[str]) -> str:

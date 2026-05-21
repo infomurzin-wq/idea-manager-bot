@@ -395,6 +395,54 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Поле обновлено: YTM.", updated_screen["text"])
             self.assertIn("YTM: 19.4%", updated_screen["text"])
 
+    def test_bridge_research_question_uses_card_context_and_stores_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            import_screen = bridge.import_manual_text(
+                "ПР-Лизинг 002Р-03 (RU000A10CJ92)\n"
+                "Купон: 20%, ежемесячно\n"
+                "YTM: 25,2%\n",
+            )
+            show_callback = next(
+                item["callback_data"]
+                for row in import_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:show:")
+            )
+            detail_screen = bridge.handle_action(show_callback)
+            research_callback = next(
+                item["callback_data"]
+                for row in detail_screen["buttons"]
+                for item in row
+                if item["callback_data"].startswith("bond:research:")
+            )
+            llm = FakeBondResearchLLM()
+
+            research_screen = bridge.research_question(
+                research_callback,
+                "Какие риски проверить?",
+                llm,
+            )
+
+            self.assertIn("Research: ПР-Лизинг 002Р-03", research_screen["text"])
+            self.assertIn("Ответ fake research", research_screen["text"])
+            self.assertIn("Всего вопросов: 1", research_screen["text"])
+            self.assertIn("ПР-Лизинг 002Р-03", llm.card_context)
+            telegram_actions = bridge._import_from_scripts_dir("telegram_actions")
+            candidate_store = bridge._import_from_scripts_dir("candidate_store")
+            records = candidate_store.load_store(store_path)
+            key = telegram_actions.resolve_action_key(
+                records,
+                research_callback.split(":")[-1],
+            )
+            record = candidate_store.get_candidate(records, key)
+            self.assertEqual("Какие риски проверить?", record["research"][0]["question"])
+            self.assertEqual("Ответ fake research", record["research"][0]["answer"])
+
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
             "@probonds",
@@ -678,6 +726,17 @@ def make_settings() -> Settings:
         github_sync_token=None,
         github_sync_base_path="",
     )
+
+
+class FakeBondResearchLLM:
+    def __init__(self) -> None:
+        self.card_context = ""
+
+    def research_bond(self, question: str, card_context: str, history: list[dict]) -> str:
+        self.card_context = card_context
+        self.question = question
+        self.history = history
+        return "Ответ fake research"
 
 
 def restore_env(name: str, value: str | None) -> None:

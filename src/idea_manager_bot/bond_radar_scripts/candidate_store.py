@@ -317,6 +317,31 @@ def update_candidate_field(
     return record
 
 
+def append_research_entry(
+    records: dict[str, dict[str, Any]],
+    lookup_key: str,
+    question: str,
+    answer: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    matched_key = find_existing_record_key(records, lookup_key)
+    if matched_key is None:
+        raise KeyError(f"Candidate not found: {lookup_key}")
+
+    record = records[matched_key]
+    timestamp = iso_timestamp(now)
+    record.setdefault("research", []).append(
+        {
+            "created_at": timestamp,
+            "question": question.strip(),
+            "answer": answer.strip(),
+        }
+    )
+    record["storage"]["updated_at"] = timestamp
+    return record
+
+
 def list_candidates(
     records: dict[str, dict[str, Any]],
     *,

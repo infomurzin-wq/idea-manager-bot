@@ -216,6 +216,52 @@ class BondRadarBridge:
         except Exception as exc:  # noqa: BLE001
             return self._unavailable_screen(f"Не удалось обновить поле карточки: {exc}")
 
+    def research_question(
+        self,
+        research_action: str,
+        question: str,
+        llm_service: Any,
+    ) -> dict[str, Any]:
+        if not question.strip():
+            return {
+                "text": "Не получил вопрос для Research Mode.",
+                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+            }
+
+        try:
+            self._ensure_store_exists()
+            candidate_store = self._import_from_scripts_dir("candidate_store")
+            telegram_actions = self._import_from_scripts_dir("telegram_actions")
+            format_candidate = self._import_from_scripts_dir("format_candidate")
+
+            origin, value = telegram_actions.parse_origin_and_key(
+                research_action.removeprefix("bond:research:")
+            )
+            records = candidate_store.load_store(self.store_path)
+            key = telegram_actions.resolve_action_key(records, value)
+            record = candidate_store.get_candidate(records, key)
+            history = record.get("research", [])
+            card_context = format_candidate.format_candidate_message(record)
+            answer = llm_service.research_bond(question.strip(), card_context, history)
+            record = candidate_store.append_research_entry(
+                records,
+                key,
+                question.strip(),
+                answer,
+                now=datetime.now(UTC),
+            )
+            candidate_store.write_store(self.store_path, records)
+            title = format_candidate.format_title(record["candidate"]["instrument"])
+            text = (
+                f"Research: {title}\n\n"
+                f"Вопрос: {question.strip()}\n\n"
+                f"{answer}\n\n"
+                f"Сохранено в истории research карточки. Всего вопросов: {len(record.get('research', []))}"
+            )
+            return {"text": text, "buttons": telegram_actions.detail_buttons(record, origin=origin)}
+        except Exception as exc:  # noqa: BLE001
+            return self._unavailable_screen(f"Не удалось выполнить Research Mode: {exc}")
+
     @staticmethod
     def _select_append_candidate(
         candidate_store: Any,
