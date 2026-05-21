@@ -56,8 +56,8 @@ class TInvestClient:
 
         selected_account_id = (account_id or "").strip() or self._default_account_id()
         portfolio = self._post("tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio", {"accountId": selected_account_id})
-        from_dt = datetime.now(UTC)
-        to_dt = from_dt + timedelta(days=days)
+        fetched_at = datetime.now(UTC)
+        from_dt, to_dt = calendar_cashflow_window(fetched_at, days)
         events: list[dict[str, Any]] = []
         for item in portfolio.get("positions", []):
             if not self._is_bond_position(item):
@@ -81,7 +81,7 @@ class TInvestClient:
                 if maturity_event:
                     events.append(maturity_event)
         return TInvestCashflowSnapshot(
-            fetched_at=from_dt.isoformat(timespec="seconds"),
+            fetched_at=fetched_at.isoformat(timespec="seconds"),
             account_id=selected_account_id,
             events=sorted(events, key=lambda event: (event["date"], event["type"], event["name"])),
         )
@@ -331,6 +331,25 @@ def parse_datetime(value: Any) -> datetime | None:
         return datetime.fromisoformat(text)
     except ValueError:
         return None
+
+
+def calendar_cashflow_window(now: datetime, days: int) -> tuple[datetime, datetime]:
+    period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    horizon = now + timedelta(days=days)
+    next_month = month_start(add_month(horizon, 1))
+    period_end = next_month - timedelta(seconds=1)
+    return period_start, period_end
+
+
+def month_start(value: datetime) -> datetime:
+    return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def add_month(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    return value.replace(year=year, month=month, day=1)
 
 
 def normalize_bond_event_type(value: Any) -> str | None:

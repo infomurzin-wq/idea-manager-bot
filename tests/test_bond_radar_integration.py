@@ -13,7 +13,7 @@ from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS
 from idea_manager_bot.config import Settings
 from idea_manager_bot.link_reader import LinkReader
-from idea_manager_bot.t_invest import TInvestClient
+from idea_manager_bot.t_invest import TInvestClient, calendar_cashflow_window
 
 
 MYCODEX_ROOT = Path(__file__).resolve().parents[2]
@@ -645,6 +645,15 @@ class BondRadarIntegrationTest(unittest.TestCase):
             ],
             snapshot.events,
         )
+
+    def test_cashflow_window_uses_full_calendar_boundary_months(self) -> None:
+        period_start, period_end = calendar_cashflow_window(
+            datetime(2026, 5, 21, 18, 8, 15, tzinfo=UTC),
+            92,
+        )
+
+        self.assertEqual("2026-05-01T00:00:00+00:00", period_start.isoformat(timespec="seconds"))
+        self.assertEqual("2026-08-31T23:59:59+00:00", period_end.isoformat(timespec="seconds"))
 
     def test_bond_manual_import_source_channel_uses_telegram_channel_from_url(self) -> None:
         self.assertEqual(
