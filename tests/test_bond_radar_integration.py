@@ -468,6 +468,33 @@ class BondRadarIntegrationTest(unittest.TestCase):
         self.assertIn("https://example.com/post", text)
         self.assertIn("Полипласт П02-БО-99", text)
 
+    def test_bond_manual_import_diagnostics_are_added_only_for_empty_link_imports(self) -> None:
+        screen = {"text": "Ручной импорт завершен.\nНайдено карточек: 0", "card_count": 0}
+        payload = {
+            "source_url": "https://t.me/probonds/16341",
+            "link_fetch_status": "success",
+            "extracted_content": "Текст без купона и YTM",
+            "link_fetch_error": None,
+        }
+
+        IdeaManagerApp._add_bond_import_diagnostics(screen, payload, "https://t.me/probonds/16341\n\nТекст без купона и YTM")
+
+        self.assertIn("Диагностика ссылки:", screen["text"])
+        self.assertIn("- чтение ссылки: success", screen["text"])
+        self.assertIn("- извлечено текста:", screen["text"])
+        self.assertIn("Фрагмент, который ушёл в парсер:", screen["text"])
+
+    def test_bond_manual_import_diagnostics_are_skipped_for_successful_imports(self) -> None:
+        screen = {"text": "Ручной импорт завершен.\nНайдено карточек: 1", "card_count": 1}
+
+        IdeaManagerApp._add_bond_import_diagnostics(
+            screen,
+            {"source_url": "https://t.me/probonds/16341", "link_fetch_status": "success"},
+            "Купон 20%",
+        )
+
+        self.assertNotIn("Диагностика ссылки:", screen["text"])
+
     def test_link_reader_extracts_public_telegram_post_text(self) -> None:
         html = """
         <html><body>

@@ -353,6 +353,7 @@ class IdeaManagerApp:
                     source_channel=self._bond_manual_source_channel_from_payload(payload, source_url),
                     source_url=source_url,
                 )
+                self._add_bond_import_diagnostics(screen, payload, text)
                 self._reset_flow(context)
                 await update.message.reply_text(
                     screen["text"][:4000],
@@ -630,6 +631,37 @@ class IdeaManagerApp:
         if extracted_content and extracted_content not in raw_text:
             return f"{raw_text}\n\n{extracted_content}".strip()
         return raw_text
+
+    @staticmethod
+    def _add_bond_import_diagnostics(
+        screen: dict[str, Any],
+        payload: dict[str, Any],
+        parsed_text: str,
+    ) -> None:
+        if int(screen.get("card_count") or 0) > 0:
+            return
+
+        source_url = payload.get("source_url") or payload.get("telegram_source_url")
+        if not source_url:
+            return
+
+        status = payload.get("link_fetch_status") or "not_applicable"
+        extracted_content = (payload.get("extracted_content") or "").strip()
+        lines = [
+            "",
+            "Диагностика ссылки:",
+            f"- URL: {source_url}",
+            f"- чтение ссылки: {status}",
+            f"- извлечено текста: {len(extracted_content)} символов",
+        ]
+        if payload.get("link_fetch_error"):
+            lines.append(f"- ошибка чтения: {payload['link_fetch_error']}")
+
+        preview = " ".join(parsed_text.split())[:700]
+        if preview:
+            lines.extend(["", "Фрагмент, который ушёл в парсер:", preview])
+
+        screen["text"] = f"{screen['text']}\n" + "\n".join(lines)
 
     @classmethod
     def _bond_manual_source_url(cls, payload: dict[str, Any]) -> str | None:
