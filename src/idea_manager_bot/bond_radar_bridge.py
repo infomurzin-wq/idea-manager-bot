@@ -277,7 +277,15 @@ class BondRadarBridge:
                 [{"text": "Главное меню", "callback_data": "main:home"}],
             ]
         )
-        return {"text": "\n".join(lines), "buttons": buttons}
+        return {
+            "text": "\n".join(lines),
+            "buttons": buttons,
+            "card_count": card_count,
+            "affected_count": len(affected_keys),
+            "inserted": inserted,
+            "updated": updated,
+            "unchanged": unchanged,
+        }
 
     def _ensure_store_exists(self) -> None:
         if self.store_path.exists():

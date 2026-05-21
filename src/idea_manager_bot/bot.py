@@ -4,6 +4,7 @@ import asyncio
 import atexit
 import logging
 import os
+import re
 from typing import Any
 from urllib.parse import urlparse
 from datetime import UTC, datetime, timedelta
@@ -329,6 +330,9 @@ class IdeaManagerApp:
             "bond_append_candidate",
             "bond_edit_field",
         }:
+            auto_imported_bond = await self._try_auto_import_bond(update, context)
+            if auto_imported_bond:
+                return
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
                 return
@@ -931,6 +935,68 @@ class IdeaManagerApp:
         record.extracted_content = manual_text
         record.link_fetch_status = "manual_text_added"
         self.storage.save_context_record(record)
+
+    async def _try_auto_import_bond(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> bool:
+        if not update.message or not self._message_might_be_bond_post(update.message):
+            return False
+
+        payload = await self._extract_message_payload(update, context)
+        text = self._build_bond_manual_import_text(payload)
+        if not self._text_might_be_bond_post(text):
+            return False
+
+        source_url = self._bond_manual_source_url(payload)
+        screen = await asyncio.to_thread(
+            self.bond_radar.import_manual_text,
+            text,
+            source_channel=self._bond_manual_source_channel_from_payload(payload, source_url),
+            source_url=source_url,
+        )
+        if int(screen.get("card_count") or 0) <= 0:
+            return False
+
+        await update.message.reply_text(
+            f"Похоже на пост про облигации. Добавил в Bond Radar.\n\n{screen['text'][:3600]}",
+            reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+        )
+        return True
+
+    @classmethod
+    def _message_might_be_bond_post(cls, message: Message) -> bool:
+        text = (message.text or message.caption or "").strip()
+        if not text:
+            return False
+        if cls._text_might_be_bond_post(text):
+            return True
+        return bool(message.forward_origin) and cls._text_has_any_bond_signal(text)
+
+    @classmethod
+    def _text_might_be_bond_post(cls, text: str) -> bool:
+        lowered = text.lower()
+        strong_signals = [
+            "облигац",
+            "isin",
+            "ytm",
+            "купон",
+            "сбор заявок",
+            "книга заявок",
+            "размещение",
+            "оферт",
+            "амортиз",
+            "погашени",
+        ]
+        score = sum(1 for signal in strong_signals if signal in lowered)
+        has_isin_pattern = bool(re.search(r"\b[A-Z]{2}[A-Z0-9]{10}\b", text.upper()))
+        return score >= 2 or (has_isin_pattern and score >= 1)
+
+    @staticmethod
+    def _text_has_any_bond_signal(text: str) -> bool:
+        lowered = text.lower()
+        return any(signal in lowered for signal in ("облигац", "isin", "ytm", "купон", "оферт"))
 
     async def _try_recover_context_append(
         self,

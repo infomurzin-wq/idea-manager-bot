@@ -141,6 +141,8 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
             self.assertIn("Ручной импорт завершен", screen["text"])
             self.assertIn("Новых: 1", screen["text"])
+            self.assertEqual(1, screen["card_count"])
+            self.assertEqual(1, screen["affected_count"])
             self.assertIn("Полипласт П02-БО-99", screen["text"])
             self.assertTrue(any(callback.startswith("bond:show:") for callback in callbacks))
             self.assertIn("bond:list:new", callbacks)
@@ -359,6 +361,18 @@ class BondRadarIntegrationTest(unittest.TestCase):
             "@probonds",
             IdeaManagerApp._bond_manual_source_channel("https://t.me/probonds/123"),
         )
+
+    def test_auto_bond_import_text_filter_accepts_bond_posts(self) -> None:
+        self.assertTrue(
+            IdeaManagerApp._text_might_be_bond_post(
+                "ПР-Лизинг 002Р-03 RU000A10CJ92\n"
+                "Купон: 20%, ежемесячно\n"
+                "YTM: 25,2%"
+            )
+        )
+
+    def test_auto_bond_import_text_filter_rejects_regular_messages(self) -> None:
+        self.assertFalse(IdeaManagerApp._text_might_be_bond_post("Надо посмотреть статью про Python и n8n"))
 
     def test_bond_manual_import_source_channel_uses_web_host_for_regular_urls(self) -> None:
         self.assertEqual(
