@@ -533,6 +533,14 @@ def extract_date_after(text: str, label_pattern: str, default_year: int) -> str 
     for match in re.finditer(label_pattern, text, re.IGNORECASE):
         after = text[match.end() : min(len(text), match.end() + 90)]
         if "срок" in match.group(0).lower() or "погаш" in match.group(0).lower():
+            before = text[max(0, match.start() - 45) : match.start()]
+            before_term_match = re.search(
+                r"(\d+(?:[,.]\d+)?)\s?(?:года|год|лет)\s+до\s*$",
+                before,
+                re.IGNORECASE,
+            )
+            if before_term_match:
+                return f"{before_term_match.group(1).replace(',', '.')} years"
             term_match = re.search(r"[^0-9]{0,40}(\d+(?:[,.]\d+)?)\s?(?:года|год|лет)", after, re.IGNORECASE)
             if term_match:
                 return f"{term_match.group(1).replace(',', '.')} years"
@@ -741,9 +749,17 @@ def extract_issue_size(text: str) -> str | None:
         text,
         re.IGNORECASE,
     )
-    if not match:
-        return None
-    return re.sub(r"\s+", " ", match.group(1).replace(",", ".")).strip()
+    if match:
+        return re.sub(r"\s+", " ", match.group(1).replace(",", ".")).strip()
+
+    bullet_match = re.search(
+        r"(?:^|\n)\s*[-–—•]\s*((?:\d+(?:[,.]\d+)?\s*(?:-|–|—)\s*)?\d+(?:[,.]\d+)?\s*(?:млн|млрд)\s*(?:р\.?|руб|₽))\b",
+        text,
+        re.IGNORECASE,
+    )
+    if bullet_match:
+        return re.sub(r"\s+", " ", bullet_match.group(1).replace(",", ".")).strip()
+    return None
 
 
 def extract_issuer(text: str) -> str | None:

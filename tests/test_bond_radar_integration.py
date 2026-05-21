@@ -206,6 +206,8 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
             self.assertIn("Эмитент: Транспортная лизинговая компания", detail_screen["text"])
             self.assertNotIn("Эмитент: #тлк #анонс", detail_screen["text"])
+            self.assertIn("Погашение / срок: 3 года", detail_screen["text"])
+            self.assertIn("Объем: 200-250 млн р", detail_screen["text"])
 
     def test_bridge_imports_manual_text_with_clickable_source_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
