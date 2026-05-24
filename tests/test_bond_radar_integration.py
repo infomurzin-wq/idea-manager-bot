@@ -254,6 +254,69 @@ class BondRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Погашение / срок: 3 года", detail_screen["text"])
             self.assertIn("Объем: 200-250 млн р", detail_screen["text"])
 
+    def test_bridge_imports_coupon_selection_post_as_separate_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            text = (
+                "🚀 6 самых доходных облигаций с ежемесячными купонами до 21%. Рейтинг А- и А\n"
+                "Продолжаем богатеть на облигациях. Выпуски без оферт.\n"
+                "💰 ВУШ БО 001P-04\n"
+                "● ISIN: RU000A10BS76\n"
+                "● Рейтинг: А-\n"
+                "● Цена: 96,87%\n"
+                "● Купон: 20,25% (₽16,64)\n"
+                "● Дата погашения: 26.05.2028\n"
+                "● Купонов в год: 12\n"
+                "💰 Брусника 002Р-04\n"
+                "● ISIN: RU000A10C8F3\n"
+                "● Рейтинг: А-\n"
+                "● Цена: 100,2%\n"
+                "● Купон: 21,5% (₽17,67)\n"
+                "● Дата погашения: 23.07.2028\n"
+                "● Купонов в год: 12\n"
+                "💰 Эталон-Финанс 002Р-04\n"
+                "● ISIN: RU000A10DA74\n"
+                "● Рейтинг: А-\n"
+                "● Цена: 98,88%\n"
+                "● Купон: 20% (₽16,44)\n"
+                "● Дата погашения: 11.11.2027\n"
+                "● Купонов в год: 12\n"
+                "💰 АБЗ-1 002P-06\n"
+                "● ISIN: RU000A10EW51\n"
+                "● Рейтинг: А-\n"
+                "● Цена: 100,2% амортизация с февраля 2028 года\n"
+                "● Купон: 17,5% (₽14,38)\n"
+                "● Дата погашения: 01.04.2029\n"
+                "● Купонов в год: 12\n"
+                "💰 Уралкуз 001Р-01\n"
+                "● ISIN: RU000A10C6M3\n"
+                "● Рейтинг: А-\n"
+                "● Цена: 102,5%\n"
+                "● Купон: 20% (₽16,44)\n"
+                "● Дата погашения: 15.07.2027\n"
+                "● Купонов в год: 12\n"
+                "💰 реСтор 001Р-03\n"
+                "● ISIN: RU000A10E7K3\n"
+                "● Рейтинг: А-\n"
+                "● Цена: 102,6%\n"
+                "● Купон: 18,75% (₽15,41)\n"
+                "● Дата погашения: 27.01.2028\n"
+                "● Купонов в год: 12\n"
+                "Вот такая подборка для любителей стричь купоны."
+            )
+
+            screen = bridge.import_manual_text(text, source_channel="@manual")
+
+            self.assertIn("Найдено карточек: 6", screen["text"])
+            self.assertIn("Новых: 6", screen["text"])
+            self.assertIn("ВУШ", screen["text"])
+            self.assertNotIn("ВУШ БО", screen["text"])
+            self.assertIn("АБЗ-1", screen["text"])
+
     def test_bridge_imports_manual_text_with_clickable_source_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             store_path = Path(tmp_dir) / "candidates_store.jsonl"

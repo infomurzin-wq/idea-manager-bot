@@ -238,6 +238,9 @@ def split_candidate_blocks(text: str) -> list[CandidateBlock]:
         return [CandidateBlock(1, text)]
 
     if count_isin_like(text) > 1:
+        line_blocks = split_multi_isin_line_blocks(text)
+        if line_blocks:
+            return line_blocks
         blocks = [
             CandidateBlock(index, paragraph)
             for index, paragraph in enumerate(paragraphs, start=1)
@@ -285,6 +288,72 @@ def split_candidate_blocks(text: str) -> list[CandidateBlock]:
     if blocks:
         return blocks
     return [CandidateBlock(1, normalized_full)]
+
+
+def split_multi_isin_line_blocks(text: str) -> list[CandidateBlock]:
+    lines = text.splitlines()
+    starts: list[int] = []
+    for index, line in enumerate(lines):
+        if is_multi_card_title_line(line, lines[index + 1 : index + 9]):
+            starts.append(index)
+
+    if len(starts) < 2:
+        return []
+
+    blocks: list[CandidateBlock] = []
+    for block_index, start in enumerate(starts, start=1):
+        next_start = starts[block_index] if block_index < len(starts) else len(lines)
+        block_text = trim_multi_card_block(lines[start:next_start])
+        if count_isin_like(block_text) == 1:
+            blocks.append(CandidateBlock(len(blocks) + 1, block_text))
+    return blocks
+
+
+def is_multi_card_title_line(line: str, following_lines: list[str]) -> bool:
+    title = strip_line_marker(line)
+    if not title or len(title) > 100:
+        return False
+    if is_card_detail_line(title):
+        return False
+    if not any(count_isin_like(candidate) > 0 for candidate in following_lines):
+        return False
+    return bool(re.search(r"\b(?:[БB][ОO]\s+)?\d{3}[РP]-\d+\b|\b\d{3}[РP]-\d+\b|\b[БB][ОO]-[ПP]\d+\b", normalize_for_codes(title), re.IGNORECASE))
+
+
+def trim_multi_card_block(lines: list[str]) -> str:
+    kept: list[str] = []
+    seen_detail = False
+    for index, line in enumerate(lines):
+        if index == 0:
+            kept.append(strip_line_marker(line))
+            continue
+        if not line.strip():
+            if seen_detail:
+                kept.append(line)
+            continue
+        if is_card_detail_line(line):
+            kept.append(line)
+            seen_detail = True
+            continue
+        if seen_detail:
+            break
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def is_card_detail_line(line: str) -> bool:
+    cleaned = strip_line_marker(line)
+    return bool(
+        re.match(
+            r"^(?:ISIN|Рейтинг|Цена|Стоимость|Купон|Ставка купона|Дата погашения|Погашение|Купонов в год|Выплат в год|ТКД|YTM|Оферта|Амортизация)\s*:",
+            cleaned,
+            re.IGNORECASE,
+        )
+    )
+
+
+def strip_line_marker(line: str) -> str:
+    return re.sub(r"^[\s\-–—•●▪️✅💰🚀⚙️]+", "", line).strip()
 
 
 def looks_relevant(lowered: str) -> bool:
@@ -581,6 +650,12 @@ def normalize_date(day: str, month: str, year: str) -> str:
 
 
 def extract_coupon_frequency(lowered: str) -> int | None:
+    if re.search(r"(?:купон(?:ов)?|выплат)\s+в\s+год\s*:\s*12", lowered):
+        return 12
+    if re.search(r"(?:купон(?:ов)?|выплат)\s+в\s+год\s*:\s*4", lowered):
+        return 4
+    if re.search(r"(?:купон(?:ов)?|выплат)\s+в\s+год\s*:\s*2", lowered):
+        return 2
     if "купонный период: 30" in lowered or "купонный период 30" in lowered:
         return 12
     if "купонный период: 91" in lowered or "купонный период 91" in lowered:
@@ -803,7 +878,7 @@ def extract_issuer(text: str) -> str | None:
 
 def first_meaningful_line(text: str) -> str | None:
     for line in text.splitlines():
-        cleaned = line.strip(" -•●\t")
+        cleaned = strip_line_marker(line)
         if not cleaned or is_hashtag_line(cleaned):
             continue
         if not re.match(r"^(рейтинг|isin|ytm|стоимость|купон|дата|срок|объем|объём|выплаты)\b", cleaned, re.IGNORECASE):
@@ -865,7 +940,7 @@ def restore_common_cyrillic_issue(value: str) -> str:
 
 def strip_issue_name(value: str) -> str:
     return re.sub(
-        r"\b(?:[PП]\d{2}-[BБ][OО]-\d+|\d{3}[PР]-\d+|[BБ][OО]-\d{3}[PР]-\d+|[BБ][OО]-\d+|[BБ][PП]\d+|[BБ][PП]-\d+|\d[PР]\d+|\d[PР]-\d+|1P1|\d{5})\b",
+        r"\b(?:[BБ][OО]\s+)?(?:[PП]\d{2}-[BБ][OО]-\d+|\d{3}[PР]-\d+|[BБ][OО]-\d{3}[PР]-\d+|[BБ][OО]-\d+|[BБ][PП]\d+|[BБ][PП]-\d+|\d[PР]\d+|\d[PР]-\d+|1P1|\d{5})\b",
         "",
         value,
         flags=re.IGNORECASE,
@@ -876,6 +951,7 @@ def clean_name(value: str) -> str:
     value = re.sub(r"\b(?:ООО|АО|ПАО)\b", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\(?\bRU[0-9A-ZА-Я]{10}\b\)?", "", value, flags=re.IGNORECASE)
     value = strip_trailing_rating_group(value)
+    value = re.sub(r"^[^\wА-Яа-яЁё]+", "", value)
     value = value.strip().strip('"«»')
     value = re.sub(r"\s+", " ", value)
     return value.strip(" .,-:;") or value.strip()
