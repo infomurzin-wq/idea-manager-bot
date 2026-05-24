@@ -125,7 +125,4 @@ def render_report(report: ReportSnapshot) -> str:
         lines.extend(_render_bout(bout))
         if index != len(event.bouts) - 1:
             lines.extend(["", "---", ""])
-    if event.final_notes:
-        lines.extend(["", "## Финальные замечания", ""])
-        lines.extend(_render_bullets(event.final_notes))
     return "\n".join(lines).rstrip() + "\n"
