@@ -38,6 +38,16 @@ def _format_round(raw_value: str) -> str:
     return f"R{raw_value}"
 
 
+def _meaningful_pre_fight_signals(fighter: FighterSnapshot) -> list[str]:
+    empty_signal_text = "существенных предбоевых сигналов не найдено"
+    return [
+        signal.summary_ru
+        for signal in fighter.pre_fight_signals
+        if signal.signal_type != "none"
+        and empty_signal_text not in signal.summary_ru.lower()
+    ]
+
+
 def _render_fighter(fighter: FighterSnapshot) -> list[str]:
     lines = [
         f"#### {fighter.fighter_name}",
@@ -54,22 +64,13 @@ def _render_fighter(fighter: FighterSnapshot) -> list[str]:
             "Последние 5:",
             "",
             *_render_last_five_entries(fighter),
-            "",
-            "Короткий комментарий:",
-            "",
-            f"- {fighter.fighter_commentary_ru}",
-            "",
-            "Предбоевые сигналы:",
-            "",
         ]
     )
-    if fighter.pre_fight_signals:
-        for signal in fighter.pre_fight_signals:
-            lines.append(f"- {signal.summary_ru}")
-            lines.append(f"- Источник: {signal.source}")
-    else:
-        lines.append("- Существенных предбоевых сигналов не найдено.")
-        lines.append("- Источник: `n/a`")
+    meaningful_signals = _meaningful_pre_fight_signals(fighter)
+    if meaningful_signals:
+        lines.extend(["", "Предбоевые сигналы:", ""])
+        for signal in meaningful_signals:
+            lines.append(f"- {signal}")
     return lines
 
 
@@ -93,13 +94,6 @@ def _render_bout(bout: BoutSnapshot) -> list[str]:
     if bout.fighter_b:
         lines.extend(_render_fighter(bout.fighter_b))
         lines.append("")
-    lines.extend(
-        [
-            "Комментарий по бою:",
-            "",
-            f"- {bout.bout_commentary_ru}",
-        ]
-    )
     return lines
 
 
