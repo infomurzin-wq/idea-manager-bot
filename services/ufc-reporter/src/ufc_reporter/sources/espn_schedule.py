@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import urljoin
@@ -28,6 +29,8 @@ def list_scheduled_events(reference_date: date) -> list[ScheduledEvent]:
     seen_urls: set[str] = set()
 
     for event in _list_core_api_events(reference_date):
+        if not is_supported_ufc_event_name(event.event_name):
+            continue
         if event.event_url in seen_urls:
             continue
         seen_urls.add(event.event_url)
@@ -54,6 +57,9 @@ def list_scheduled_events(reference_date: date) -> list[ScheduledEvent]:
             event_url = urljoin("https://www.espn.com", anchor[0].get("href", "").strip())
             if not event_url or event_url in seen_urls:
                 continue
+            event_name = _text_content(cells[3])
+            if not is_supported_ufc_event_name(event_name):
+                continue
             seen_urls.add(event_url)
             raw_date = _text_content(cells[0])
             parsed_date = _infer_event_date(raw_date, reference_date)
@@ -62,7 +68,7 @@ def list_scheduled_events(reference_date: date) -> list[ScheduledEvent]:
             events.append(
                 ScheduledEvent(
                     event_date=parsed_date.isoformat(),
-                    event_name=_text_content(cells[3]),
+                    event_name=event_name,
                     event_url=event_url,
                     event_time=_text_content(cells[1]),
                     broadcast=_text_content(cells[2]),
@@ -87,6 +93,15 @@ def next_weekend_dates(reference_date: date) -> tuple[date, date]:
     saturday = reference_date + timedelta(days=saturday_offset)
     sunday = saturday + timedelta(days=1)
     return saturday, sunday
+
+
+def is_supported_ufc_event_name(event_name: str) -> bool:
+    normalized = " ".join(event_name.split()).lower()
+    if normalized.startswith("road to ufc"):
+        return False
+    if normalized.startswith("ufc fight night"):
+        return True
+    return re.match(r"^ufc\s+\d+\b", normalized) is not None
 
 
 def _schedule_urls(reference_date: date) -> list[str]:
