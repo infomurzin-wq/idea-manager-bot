@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from .models import BoutSnapshot, FighterSnapshot, ReportSnapshot
 
 
@@ -7,31 +9,33 @@ def _render_bullets(items: list[str], indent: str = "- ") -> list[str]:
     return [f"{indent}{item}" for item in items]
 
 
-def _render_last_five_table(fighter: FighterSnapshot) -> list[str]:
-    lines = [
-        "| Дата | Соперник | Результат | Метод | Раунд | Промоушен | Ивент |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
-    ]
+def _render_last_five_entries(fighter: FighterSnapshot) -> list[str]:
     if not fighter.last_five:
-        lines.append("| n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
-        return lines
+        return ["- `n/a`"]
+    lines: list[str] = []
     for fight in fighter.last_five:
         lines.append(
-            "| "
-            + " | ".join(
-                [
-                    fight.fight_date,
-                    fight.opponent,
-                    fight.result,
-                    fight.method,
-                    fight.round,
-                    fight.promotion,
-                    fight.event_name,
-                ]
+            (
+                f"- `{_format_fight_date(fight.fight_date)}` | {fight.opponent} | "
+                f"{fight.result} | {fight.method} | {_format_round(fight.round)} | "
+                f"{fight.promotion} | {fight.event_name}"
             )
-            + " |"
         )
     return lines
+
+
+def _format_fight_date(raw_value: str) -> str:
+    try:
+        parsed = date.fromisoformat(raw_value)
+    except ValueError:
+        return raw_value
+    return parsed.strftime("%d.%m.%Y")
+
+
+def _format_round(raw_value: str) -> str:
+    if raw_value == "n/a":
+        return raw_value
+    return f"R{raw_value}"
 
 
 def _render_fighter(fighter: FighterSnapshot) -> list[str]:
@@ -44,14 +48,12 @@ def _render_fighter(fighter: FighterSnapshot) -> list[str]:
     ]
     for note in fighter.additional_notes:
         lines.append(f"- Дополнительно: `{note}`")
-    lines.append("- Источники:")
-    lines.extend(_render_bullets(fighter.sources, indent="  - "))
     lines.extend(
         [
             "",
             "Последние 5:",
             "",
-            *_render_last_five_table(fighter),
+            *_render_last_five_entries(fighter),
             "",
             "Короткий комментарий:",
             "",
