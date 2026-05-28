@@ -1240,10 +1240,10 @@ class IdeaManagerApp:
         if not self.t_invest.configured:
             return {
                 "text": (
-                    "Портфель облигаций\n\n"
+                    "💼 Портфель облигаций\n\n"
                     "T_INVEST_TOKEN не настроен. Добавь read-only токен Т-Инвестиций в Railway Variables."
                 ),
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
         sort = self._bond_portfolio_sort(action)
         try:
@@ -1258,18 +1258,18 @@ class IdeaManagerApp:
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("T-Invest portfolio refresh failed")
             return {
-                "text": f"Портфель облигаций\n\nНе удалось обновить портфель через T-Invest API: {exc}",
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "text": f"💼 Портфель облигаций\n\nНе удалось обновить портфель через T-Invest API: {exc}",
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
 
     def _build_bond_cashflow_screen(self) -> dict[str, Any]:
         if not self.t_invest.configured:
             return {
                 "text": (
-                    "Cashflow на 3 месяца\n\n"
+                    "💸 Cashflow на 3 месяца\n\n"
                     "T_INVEST_TOKEN не настроен. Добавь read-only токен Т-Инвестиций в Railway Variables."
                 ),
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
         try:
             snapshot = self.t_invest.fetch_cashflow_snapshot(self.settings.t_invest_account_id)
@@ -1283,8 +1283,8 @@ class IdeaManagerApp:
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("T-Invest cashflow refresh failed")
             return {
-                "text": f"Cashflow на 3 месяца\n\nНе удалось обновить cashflow через T-Invest API: {exc}",
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "text": f"💸 Cashflow на 3 месяца\n\nНе удалось обновить cashflow через T-Invest API: {exc}",
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
 
     @staticmethod

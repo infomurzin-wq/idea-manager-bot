@@ -46,7 +46,7 @@ def render_portfolio_screen(snapshot: dict[str, Any], *, sort: str = DEFAULT_POR
     normalized_sort = normalize_portfolio_sort(sort)
     positions = sort_positions(snapshot.get("positions", []), normalized_sort)
     lines = [
-        "Портфель облигаций",
+        "💼 Портфель облигаций",
         f"Срез: {snapshot.get('fetched_at', 'н/д')}",
         f"Счёт: {snapshot.get('account_id', 'н/д')}",
         f"Позиций: {len(positions)}",
@@ -61,16 +61,16 @@ def render_portfolio_screen(snapshot: dict[str, Any], *, sort: str = DEFAULT_POR
         "text": "\n".join(lines).strip(),
         "buttons": [
             [
-                button("Погашение", next_portfolio_sort("maturity", normalized_sort)),
-                button("Рейтинг", next_portfolio_sort("rating", normalized_sort)),
+                button("📅 Погашение", next_portfolio_sort("maturity", normalized_sort)),
+                button("🏦 Рейтинг", next_portfolio_sort("rating", normalized_sort)),
             ],
             [
-                button("Ставка", next_portfolio_sort("coupon", normalized_sort)),
-                button("Сумма", next_portfolio_sort("sum", normalized_sort)),
+                button("🎟 Ставка", next_portfolio_sort("coupon", normalized_sort)),
+                button("₽ Сумма", next_portfolio_sort("sum", normalized_sort)),
             ],
-            [button("Обновить", normalized_sort)],
-            [{"text": "Cashflow", "callback_data": "bond:cashflow"}],
-            [{"text": "К облигациям", "callback_data": "bond:home"}, {"text": "Главное меню", "callback_data": "main:home"}],
+            [button("🔄 Обновить", normalized_sort)],
+            [{"text": "💸 Cashflow", "callback_data": "bond:cashflow"}],
+            [{"text": "📡 К облигациям", "callback_data": "bond:home"}, {"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ],
     }
 
@@ -78,7 +78,7 @@ def render_portfolio_screen(snapshot: dict[str, Any], *, sort: str = DEFAULT_POR
 def render_cashflow_screen(snapshot: dict[str, Any]) -> dict[str, Any]:
     events = sorted(snapshot.get("events", []), key=lambda event: (event.get("date") or "", event.get("type") or "", event.get("name") or ""))
     lines = [
-        "Cashflow на 3 месяца",
+        "💸 Cashflow на 3 месяца",
         f"Срез: {snapshot.get('fetched_at', 'н/д')}",
         "",
     ]
@@ -112,9 +112,9 @@ def render_cashflow_screen(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
         "text": "\n".join(lines).strip(),
         "buttons": [
-            [{"text": "Обновить Cashflow", "callback_data": "bond:cashflow"}],
-            [{"text": "Портфель", "callback_data": "bond:portfolio"}, {"text": "К облигациям", "callback_data": "bond:home"}],
-            [{"text": "Главное меню", "callback_data": "main:home"}],
+            [{"text": "🔄 Обновить Cashflow", "callback_data": "bond:cashflow"}],
+            [{"text": "💼 Портфель", "callback_data": "bond:portfolio"}, {"text": "📡 К облигациям", "callback_data": "bond:home"}],
+            [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ],
     }
 

@@ -30,7 +30,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         screen = bridge.handle_action("bond:home")
 
-        self.assertIn("Облигации", screen["text"])
+        self.assertIn("📡 Bond Radar", screen["text"])
         self.assertIn("Новые кандидаты", screen["text"])
         self.assertEqual("bond:list:new", screen["buttons"][0][0]["callback_data"])
 
@@ -159,7 +159,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
         self.assertEqual(["bond:list:new", "bond:add:manual"], [item["callback_data"] for item in screen["buttons"][0]])
         self.assertEqual(["bond:portfolio", "bond:cashflow"], [item["callback_data"] for item in screen["buttons"][1]])
         self.assertEqual(["bond:list:watchlist", "bond:list:rejected"], [item["callback_data"] for item in screen["buttons"][2]])
-        self.assertEqual([{"text": "Главное меню", "callback_data": "main:home"}], screen["buttons"][3])
+        self.assertEqual([{"text": "🏠 Главное меню", "callback_data": "main:home"}], screen["buttons"][3])
 
     def test_bridge_imports_manual_text_into_store(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -884,7 +884,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
             rejected_screen = bridge.handle_action(reject_callback)
 
             self.assertIn("Статус: отклонен", rejected_screen["text"])
-            self.assertIn({"text": "Назад", "callback_data": "bond:list:watchlist"}, rejected_screen["buttons"][-1])
+            self.assertIn({"text": "↩️ Назад", "callback_data": "bond:list:watchlist"}, rejected_screen["buttons"][-1])
 
     def test_delete_rejected_candidate_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -909,7 +909,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
             confirm_screen = bridge.handle_action(f"bond:delete:rejected:{short_id}")
             self.assertIn("Удалить карточку:", confirm_screen["text"])
             self.assertIn(
-                {"text": "Удалить навсегда", "callback_data": f"bond:delete-confirm:rejected:{short_id}"},
+                {"text": "🗑 Удалить навсегда", "callback_data": f"bond:delete-confirm:rejected:{short_id}"},
                 confirm_screen["buttons"][0],
             )
 
@@ -937,7 +937,7 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
             detail_screen = bridge.handle_action(show_callback)
 
-            self.assertIn({"text": "Назад", "callback_data": "bond:list:new:2"}, detail_screen["buttons"][-1])
+            self.assertIn({"text": "↩️ Назад", "callback_data": "bond:list:new:2"}, detail_screen["buttons"][-1])
 
     def test_sort_controls_exist_for_rejected_list_and_keep_back_navigation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -950,9 +950,9 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
             sorted_screen = bridge.handle_action("bond:list:rejected:1:ytm_desc")
 
-            self.assertIn({"text": "Доходность ↓", "callback_data": "bond:list:rejected:1:ytm_asc"}, sorted_screen["buttons"][0])
-            self.assertIn({"text": "Погашение ↑↓", "callback_data": "bond:list:rejected:1:maturity_desc"}, sorted_screen["buttons"][0])
-            self.assertIn({"text": "Рейтинг ↑↓", "callback_data": "bond:list:rejected:1:rating_desc"}, sorted_screen["buttons"][0])
+            self.assertIn({"text": "📈 Доходность ↓", "callback_data": "bond:list:rejected:1:ytm_asc"}, sorted_screen["buttons"][0])
+            self.assertIn({"text": "📅 Погашение ↑↓", "callback_data": "bond:list:rejected:1:maturity_desc"}, sorted_screen["buttons"][0])
+            self.assertIn({"text": "🏦 Рейтинг ↑↓", "callback_data": "bond:list:rejected:1:rating_desc"}, sorted_screen["buttons"][0])
 
     def test_bridge_builds_inline_keyboard(self) -> None:
         markup = BondRadarBridge.inline_keyboard(

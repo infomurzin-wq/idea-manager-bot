@@ -122,7 +122,7 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
                 "Отправь следующим сообщением текст поста или параметры выпуска. "
                 "Бот попробует извлечь карточку и добавить ее в Новые кандидаты."
             ),
-            "buttons": [[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]],
+            "buttons": [[button("📡 К облигациям", ACTION_HOME), button("🏠 Главное меню", ACTION_MAIN_MENU)]],
         }
 
     if action.startswith("bond:show:"):
@@ -204,35 +204,35 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
 
     return {
         "text": f"Неизвестное действие: {action}",
-        "buttons": [[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]],
+        "buttons": [[button("📡 К облигациям", ACTION_HOME), button("🏠 Главное меню", ACTION_MAIN_MENU)]],
     }
 
 
 def home_screen(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
     counts = count_by_status(records)
     text = (
-        "Облигации\n\n"
-        f"Новые кандидаты: {counts['new']}\n"
-        f"Watchlist: {counts['watchlist']}\n"
-        f"Отклоненные: {counts['rejected']}\n\n"
+        "📡 Bond Radar\n\n"
+        f"🆕 Новые кандидаты: {counts['new']}\n"
+        f"⭐ Watchlist: {counts['watchlist']}\n"
+        f"🚫 Отклоненные: {counts['rejected']}\n\n"
         "Выбери раздел."
     )
     return {
         "text": text,
         "buttons": [
             [
-                button(f"Новые кандидаты ({counts['new']})", "bond:list:new"),
-                button("Добавить вручную", ACTION_ADD_MANUAL),
+                button(f"🆕 Новые ({counts['new']})", "bond:list:new"),
+                button("➕ Добавить", ACTION_ADD_MANUAL),
             ],
             [
-                button("Портфель", "bond:portfolio"),
-                button("Cashflow", "bond:cashflow"),
+                button("💼 Портфель", "bond:portfolio"),
+                button("💸 Cashflow", "bond:cashflow"),
             ],
             [
-                button(f"Watchlist ({counts['watchlist']})", "bond:list:watchlist"),
-                button(f"Отклоненные ({counts['rejected']})", "bond:list:rejected"),
+                button(f"⭐ Watchlist ({counts['watchlist']})", "bond:list:watchlist"),
+                button(f"🚫 Отклоненные ({counts['rejected']})", "bond:list:rejected"),
             ],
-            [button("Главное меню", ACTION_MAIN_MENU)],
+            [button("🏠 Главное меню", ACTION_MAIN_MENU)],
         ],
     }
 
@@ -261,11 +261,11 @@ def list_screen(
     buttons = list_candidate_buttons(page_items, origin=origin, start_index=offset + 1)
     buttons.insert(0, sort_buttons(status, sort))
     if status == "new":
-        buttons.insert(1, [button("Добавить вручную", ACTION_ADD_MANUAL)])
+        buttons.insert(1, [button("➕ Добавить вручную", ACTION_ADD_MANUAL)])
     pagination = pagination_buttons(status, current_page, page_count, sort)
     if pagination:
         buttons.append(pagination)
-    buttons.extend([[button("К облигациям", ACTION_HOME), button("Главное меню", ACTION_MAIN_MENU)]])
+    buttons.extend([[button("📡 К облигациям", ACTION_HOME), button("🏠 Главное меню", ACTION_MAIN_MENU)]])
     return {"text": text, "buttons": buttons}
 
 
@@ -317,8 +317,8 @@ def edit_menu_screen(
         if right:
             row.append(button(right[1], edit_field_action(encoded_origin, right[0], short_id)))
         rows.append(row)
-    rows.append([button("Распарсить фрагмент", f"bond:append-text:{encoded_origin}:{short_id}")])
-    rows.append([button("Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
+    rows.append([button("🧩 Распарсить фрагмент", f"bond:append-text:{encoded_origin}:{short_id}")])
+    rows.append([button("↩️ Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
     rows.append(detail_back_row(back_status, back_page, back_sort))
     return {
         "text": (
@@ -410,8 +410,8 @@ def research_history_screen(
         return {
             "text": f"История research: {title}\n\nИстория research пока пустая.",
             "buttons": [
-                [button("Задать вопрос", f"bond:research:{encoded_origin}:{short_id}")],
-                [button("Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")],
+                [button("🔎 Задать вопрос", f"bond:research:{encoded_origin}:{short_id}")],
+                [button("↩️ Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")],
                 detail_back_row(back_status, back_page, back_sort),
             ],
         }
@@ -443,8 +443,8 @@ def research_history_screen(
     pagination = research_history_pagination(encoded_origin, short_id, current_page, page_count)
     if pagination:
         buttons.append(pagination)
-    buttons.append([button("Задать вопрос", f"bond:research:{encoded_origin}:{short_id}")])
-    buttons.append([button("Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
+    buttons.append([button("🔎 Задать вопрос", f"bond:research:{encoded_origin}:{short_id}")])
+    buttons.append([button("↩️ Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
     buttons.append(detail_back_row(back_status, back_page, back_sort))
     return {"text": "\n".join(lines).strip(), "buttons": buttons}
 
@@ -460,27 +460,27 @@ def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list
     if status == "new":
         rows.append(
             [
-                button("В watchlist", f"bond:watch:{encoded_origin}:{short_id}"),
-                button("Отклонить", f"bond:reject:{encoded_origin}:{short_id}"),
+                button("⭐ В watchlist", f"bond:watch:{encoded_origin}:{short_id}"),
+                button("🚫 Отклонить", f"bond:reject:{encoded_origin}:{short_id}"),
             ]
         )
     elif status == "watchlist":
-        rows.append([button("Отклонить", f"bond:reject:{encoded_origin}:{short_id}")])
+        rows.append([button("🚫 Отклонить", f"bond:reject:{encoded_origin}:{short_id}")])
     elif status == "rejected":
-        rows.append([button("В watchlist", f"bond:watch:{encoded_origin}:{short_id}")])
-        rows.append([button("Удалить", f"bond:delete:{encoded_origin}:{short_id}")])
+        rows.append([button("⭐ В watchlist", f"bond:watch:{encoded_origin}:{short_id}")])
+        rows.append([button("🗑 Удалить", f"bond:delete:{encoded_origin}:{short_id}")])
 
     rows.append(
         [
-            button("Research", f"bond:research:{encoded_origin}:{short_id}"),
-            button("История research", f"bond:research-history:{encoded_origin}:{short_id}"),
+            button("🔎 Research", f"bond:research:{encoded_origin}:{short_id}"),
+            button("🕘 История", f"bond:research-history:{encoded_origin}:{short_id}"),
         ]
     )
 
-    utility_row = [button("Дополнить данные", f"bond:append:{encoded_origin}:{short_id}")]
+    utility_row = [button("✏️ Данные", f"bond:append:{encoded_origin}:{short_id}")]
     isin = record["candidate"]["instrument"].get("isin")
     if isin:
-        utility_row.append(button("ISIN отдельно", f"bond:isin:{encoded_origin}:{short_id}"))
+        utility_row.append(button("🔢 ISIN", f"bond:isin:{encoded_origin}:{short_id}"))
     rows.append(utility_row)
     rows.append(detail_back_row(back_status, back_page, back_sort))
     return rows
@@ -526,7 +526,7 @@ def detail_back_buttons(record: dict[str, Any], *, origin: str | None = None) ->
 
 
 def detail_back_row(back_status: str, back_page: int, back_sort: str) -> list[dict[str, str]]:
-    return [button("Назад", list_action(back_status, back_page, back_sort)), button("Главное меню", ACTION_MAIN_MENU)]
+    return [button("↩️ Назад", list_action(back_status, back_page, back_sort)), button("🏠 Главное меню", ACTION_MAIN_MENU)]
 
 
 def delete_confirm_screen(record: dict[str, Any], *, origin: str | None = None) -> dict[str, Any]:
@@ -543,8 +543,8 @@ def delete_confirm_screen(record: dict[str, Any], *, origin: str | None = None) 
             "Используй его только для ошибочных импортов."
         ),
         "buttons": [
-            [button("Удалить навсегда", f"bond:delete-confirm:{encoded_origin}:{short_id}")],
-            [button("Назад", f"bond:show:{encoded_origin}:{short_id}"), button("Главное меню", ACTION_MAIN_MENU)],
+            [button("🗑 Удалить навсегда", f"bond:delete-confirm:{encoded_origin}:{short_id}")],
+            [button("↩️ Назад", f"bond:show:{encoded_origin}:{short_id}"), button("🏠 Главное меню", ACTION_MAIN_MENU)],
         ],
     }
 
@@ -691,7 +691,7 @@ def sort_buttons(status: str, current_sort: str) -> list[dict[str, str]]:
 
 
 def sort_label(field: str, current_sort: str) -> str:
-    labels = {"ytm": "Доходность", "maturity": "Погашение", "rating": "Рейтинг"}
+    labels = {"ytm": "📈 Доходность", "maturity": "📅 Погашение", "rating": "🏦 Рейтинг"}
     if current_sort == f"{field}_desc":
         return f"{labels[field]} ↓"
     if current_sort == f"{field}_asc":
