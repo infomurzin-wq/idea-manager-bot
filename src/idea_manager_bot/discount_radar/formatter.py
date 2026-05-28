@@ -12,7 +12,7 @@ def format_price(price: int | None) -> str:
 def format_home_screen(products: list[Product]) -> str:
     active_count = len(products)
     return (
-        "Дисконт Радар\n\n"
+        "🛒 Дисконт Радар\n\n"
         "Отслеживаем товары и последнюю известную цену.\n"
         f"Активных товаров: {active_count}\n\n"
         "На первом этапе проверка Ozon ещё не подключена: "
@@ -22,9 +22,9 @@ def format_home_screen(products: list[Product]) -> str:
 
 def format_product_list(products: list[Product]) -> str:
     if not products:
-        return "Дисконт Радар\n\nСписок пуст. Добавь первый товар."
+        return "🛒 Дисконт Радар\n\nСписок пуст. Добавь первый товар."
 
-    lines = ["Дисконт Радар\n", "Мои товары:"]
+    lines = ["🛒 Дисконт Радар\n", "📦 Мои товары:"]
     for index, product in enumerate(products, start=1):
         title = product.title or "Без названия"
         lines.append(
@@ -38,9 +38,9 @@ def format_product_list(products: list[Product]) -> str:
 
 def format_check_screen(products: list[Product]) -> str:
     if not products:
-        return "Дисконт Радар\n\nСписок пуст. Сначала добавь товар."
+        return "🛒 Дисконт Радар\n\nСписок пуст. Сначала добавь товар."
 
-    lines = ["Дисконт Радар\n", "Проверка цен:"]
+    lines = ["🛒 Дисконт Радар\n", "🔎 Проверка цен:"]
     for product in products:
         title = product.title or "Без названия"
         if product.last_price is None:

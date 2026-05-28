@@ -6,7 +6,7 @@ from pathlib import Path
 
 from telegram import InlineKeyboardButton
 
-from idea_manager_bot.bot import IdeaManagerApp, MENU_DISCOUNT, MENU_PROJECTS
+from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS, MENU_DISCOUNT, MENU_PROJECTS
 from idea_manager_bot.config import Settings
 from idea_manager_bot.discount_radar.actions import is_ozon_url, parse_price
 from idea_manager_bot.discount_radar.store import DiscountRadarStore
@@ -101,7 +101,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
 
         rows = [[button.text for button in row] for row in app._main_menu().keyboard]
 
-        self.assertIn(["Облигации", MENU_DISCOUNT], rows)
+        self.assertIn([MENU_BONDS, MENU_DISCOUNT], rows)
 
     def test_idea_and_context_action_cards_have_main_menu_exit(self) -> None:
         idea_callbacks = [
@@ -123,7 +123,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             [[InlineKeyboardButton("Item", callback_data="show_idea:item")]]
         )
 
-        self.assertEqual("Главное меню", keyboard[-1][0].text)
+        self.assertEqual("🏠 Главное меню", keyboard[-1][0].text)
         self.assertEqual("main:home", keyboard[-1][0].callback_data)
 
     def test_project_selector_can_include_main_menu_exit(self) -> None:

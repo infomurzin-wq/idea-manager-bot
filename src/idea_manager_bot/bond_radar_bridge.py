@@ -83,7 +83,7 @@ class BondRadarBridge:
         if not text.strip():
             return {
                 "text": "Не получил текст для разбора.",
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
 
         try:
@@ -137,7 +137,7 @@ class BondRadarBridge:
         if not text.strip():
             return {
                 "text": "Не получил текст для дополнения карточки.",
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
 
         try:
@@ -191,7 +191,7 @@ class BondRadarBridge:
         if not text.strip():
             return {
                 "text": "Не получил новое значение поля.",
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
 
         try:
@@ -225,7 +225,7 @@ class BondRadarBridge:
         if not question.strip():
             return {
                 "text": "Не получил вопрос для Research Mode.",
-                "buttons": [[{"text": "К облигациям", "callback_data": "bond:home"}]],
+                "buttons": [[{"text": "📡 К облигациям", "callback_data": "bond:home"}]],
             }
 
         try:
@@ -308,7 +308,7 @@ class BondRadarBridge:
                 buttons.append(
                     [
                         {
-                            "text": f"Открыть: {title[:45]}",
+                            "text": f"📄 Открыть: {title[:42]}",
                             "callback_data": f"bond:show:{short_id}",
                         }
                     ]
@@ -318,9 +318,9 @@ class BondRadarBridge:
 
         buttons.extend(
             [
-                [{"text": "Новые кандидаты", "callback_data": "bond:list:new"}],
-                [{"text": "К облигациям", "callback_data": "bond:home"}],
-                [{"text": "Главное меню", "callback_data": "main:home"}],
+                [{"text": "🆕 Новые кандидаты", "callback_data": "bond:list:new"}],
+                [{"text": "📡 К облигациям", "callback_data": "bond:home"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
             ]
         )
         return {
@@ -377,6 +377,6 @@ class BondRadarBridge:
     @staticmethod
     def _unavailable_screen(reason: str) -> dict[str, Any]:
         return {
-            "text": f"Облигации\n\n{reason}",
-            "buttons": [[{"text": "Главное меню", "callback_data": "main:home"}]],
+            "text": f"📡 Bond Radar\n\n{reason}",
+            "buttons": [[{"text": "🏠 Главное меню", "callback_data": "main:home"}]],
         }

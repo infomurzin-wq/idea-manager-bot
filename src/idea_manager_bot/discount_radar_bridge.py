@@ -33,8 +33,8 @@ class DiscountRadarBridge:
             product_id = action.removeprefix("discount:delete:")
             return actions.delete_product_screen(self.store, user_id, product_id)
         return {
-            "text": "Дисконт Радар\n\nНеизвестное действие.",
-            "buttons": [[{"text": "К Дисконт Радар", "callback_data": "discount:home"}]],
+            "text": "🛒 Дисконт Радар\n\nНеизвестное действие.",
+            "buttons": [[{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}]],
         }
 
     def add_product(self, *, user_id: int, url: str, reference_price: int) -> dict[str, Any]:
@@ -46,7 +46,7 @@ class DiscountRadarBridge:
         )
         return {
             "text": (
-                "Товар добавлен в Дисконт Радар.\n\n"
+                "🛒 Товар добавлен в Дисконт Радар.\n\n"
                 f"ID: {product.id}\n"
                 f"Последняя цена: {reference_price} ₽\n\n"
                 "Буду сигналить, если новая цена станет ниже этой суммы. "
@@ -54,9 +54,9 @@ class DiscountRadarBridge:
                 "Реальное чтение цены Ozon подключим отдельным этапом."
             ),
             "buttons": [
-                [{"text": "Мои товары", "callback_data": "discount:list"}],
-                [{"text": "К Дисконт Радар", "callback_data": "discount:home"}],
-                [{"text": "Главное меню", "callback_data": "main:home"}],
+                [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
+                [{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
             ],
         }
 

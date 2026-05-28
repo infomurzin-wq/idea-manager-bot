@@ -47,14 +47,50 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger(__name__)
 
-MENU_NEW_IDEA = "Новая идея"
-MENU_NEW_CONTEXT = "Новый контекст"
-MENU_LIST_IDEAS = "Список идей"
-MENU_LIST_CONTEXT = "Список контекста"
-MENU_BONDS = "Облигации"
-MENU_DISCOUNT = "Дисконт Радар"
-MENU_PROJECTS = "Разделы"
-MENU_CANCEL = "Отмена"
+MENU_NEW_IDEA = "💡 Новая идея"
+MENU_NEW_CONTEXT = "📎 Новый контекст"
+MENU_LIST_IDEAS = "🗂 Список идей"
+MENU_LIST_CONTEXT = "📚 Список контекста"
+MENU_BONDS = "📡 Облигации"
+MENU_DISCOUNT = "🛒 Дисконт Радар"
+MENU_PROJECTS = "🧭 Разделы"
+MENU_CANCEL = "❌ Отмена"
+
+MENU_PLAIN_LABELS = {
+    MENU_NEW_IDEA: "Новая идея",
+    MENU_NEW_CONTEXT: "Новый контекст",
+    MENU_LIST_IDEAS: "Список идей",
+    MENU_LIST_CONTEXT: "Список контекста",
+    MENU_BONDS: "Облигации",
+    MENU_DISCOUNT: "Дисконт Радар",
+    MENU_PROJECTS: "Разделы",
+    MENU_CANCEL: "Отмена",
+}
+
+PROJECT_ICONS = {
+    "ufc-betting": "🥊",
+    "venture-investing": "🚀",
+    "learning-programming": "💻",
+    "bank-factoring-product": "🏦",
+    "shared": "📦",
+}
+
+
+def menu_text_matches(text: str, menu_item: str) -> bool:
+    return text in {menu_item, MENU_PLAIN_LABELS.get(menu_item, menu_item)}
+
+
+def menu_text_variants() -> set[str]:
+    values: set[str] = set()
+    for label, plain_label in MENU_PLAIN_LABELS.items():
+        values.add(label.lower())
+        values.add(plain_label.lower())
+    return values
+
+
+def project_button_label(project: Any) -> str:
+    icon = PROJECT_ICONS.get(project.key, "📁")
+    return f"{icon} {project.label}"
 
 
 class IdeaManagerApp:
@@ -173,7 +209,7 @@ class IdeaManagerApp:
             return
 
         text = update.message.text.strip()
-        if text == MENU_NEW_IDEA:
+        if menu_text_matches(text, MENU_NEW_IDEA):
             context.user_data["pending_action"] = "idea"
             await update.message.reply_text(
                 "Выбери раздел для новой идеи.",
@@ -181,7 +217,7 @@ class IdeaManagerApp:
             )
             return
 
-        if text == MENU_NEW_CONTEXT:
+        if menu_text_matches(text, MENU_NEW_CONTEXT):
             context.user_data["pending_action"] = "context"
             await update.message.reply_text(
                 "Выбери раздел для нового контекста.",
@@ -189,7 +225,7 @@ class IdeaManagerApp:
             )
             return
 
-        if text == MENU_LIST_IDEAS:
+        if menu_text_matches(text, MENU_LIST_IDEAS):
             await update.message.reply_text(
                 "По какому разделу показать идеи?",
                 reply_markup=self._project_selector(
@@ -200,7 +236,7 @@ class IdeaManagerApp:
             )
             return
 
-        if text == MENU_LIST_CONTEXT:
+        if menu_text_matches(text, MENU_LIST_CONTEXT):
             await update.message.reply_text(
                 "По какому разделу показать контекст?",
                 reply_markup=self._project_selector(
@@ -211,19 +247,19 @@ class IdeaManagerApp:
             )
             return
 
-        if text == MENU_BONDS:
+        if menu_text_matches(text, MENU_BONDS):
             await self._send_bond_screen(update.message, "bond:home")
             return
 
-        if text == MENU_DISCOUNT:
+        if menu_text_matches(text, MENU_DISCOUNT):
             await self._send_discount_screen(update.message, "discount:home", update.effective_user.id)
             return
 
-        if text == MENU_PROJECTS:
+        if menu_text_matches(text, MENU_PROJECTS):
             await self.projects_command(update, context)
             return
 
-        if text == MENU_CANCEL:
+        if menu_text_matches(text, MENU_CANCEL):
             self._reset_flow(context)
             await update.message.reply_text("Действие отменено.", reply_markup=self._main_menu())
             return
@@ -239,7 +275,7 @@ class IdeaManagerApp:
         data = query.data or ""
         if data == "main:home":
             self._reset_flow(context)
-            await query.message.reply_text("Главное меню.", reply_markup=self._main_menu())
+            await query.message.reply_text("🏠 Главное меню.", reply_markup=self._main_menu())
             return
 
         if data == "bond:add:manual":
@@ -296,7 +332,7 @@ class IdeaManagerApp:
         if data == "discount:add":
             context.user_data["pending_action"] = "discount_add_url"
             await query.message.reply_text(
-                "Пришли ссылку на товар Ozon.",
+                "🛒 Пришли ссылку на товар Ozon.",
                 reply_markup=ReplyKeyboardRemove(),
             )
             return
@@ -831,7 +867,7 @@ class IdeaManagerApp:
             for record in records[:10]
         ]
         keyboard = self._with_main_menu_exit(keyboard)
-        header = "Идеи во всех разделах:" if all_sections else f"Идеи в разделе `{project_key}`:"
+        header = "💡 Идеи во всех разделах:" if all_sections else f"💡 Идеи в разделе `{project_key}`:"
         await message.reply_text(
             header,
             parse_mode="Markdown",
@@ -859,7 +895,7 @@ class IdeaManagerApp:
             for record in records[:10]
         ]
         keyboard = self._with_main_menu_exit(keyboard)
-        header = "Контекст во всех разделах:" if all_sections else f"Контекст в разделе `{project_key}`:"
+        header = "📚 Контекст во всех разделах:" if all_sections else f"📚 Контекст в разделе `{project_key}`:"
         await message.reply_text(
             header,
             parse_mode="Markdown",
@@ -1067,16 +1103,7 @@ class IdeaManagerApp:
             return False
 
         lower_text = manual_text.lower()
-        menu_items = {
-            MENU_NEW_IDEA.lower(),
-            MENU_NEW_CONTEXT.lower(),
-            MENU_LIST_IDEAS.lower(),
-            MENU_LIST_CONTEXT.lower(),
-            MENU_BONDS.lower(),
-            MENU_DISCOUNT.lower(),
-            MENU_PROJECTS.lower(),
-            MENU_CANCEL.lower(),
-        }
+        menu_items = menu_text_variants()
         if lower_text in menu_items:
             return False
 
@@ -1127,6 +1154,7 @@ class IdeaManagerApp:
         title = (getattr(record, "title", "") or "").strip()
         source_url = getattr(record, "source_url", None) or ""
         extracted = (getattr(record, "extracted_content", "") or "").strip()
+        icon = "📚" if hasattr(record, "context_id") else "💡"
 
         is_url_title = title.startswith("http://") or title.startswith("https://")
         if is_url_title or (source_url and title == source_url):
@@ -1134,20 +1162,20 @@ class IdeaManagerApp:
             summary = " ".join(extracted.split())
             if summary:
                 label = f"{host}: {summary}" if host else summary
-                return label[:60]
+                return f"{icon} {label[:56]}"
             if host:
-                return f"{host}: ссылка"[:60]
-            return "Ссылка без описания"
+                return f"{icon} {f'{host}: ссылка'[:56]}"
+            return f"{icon} Ссылка без описания"
 
         if not title:
-            return "Без названия"
-        return title[:60]
+            return f"{icon} Без названия"
+        return f"{icon} {title[:56]}"
 
     @staticmethod
     def _with_main_menu_exit(
         keyboard: list[list[InlineKeyboardButton]],
     ) -> list[list[InlineKeyboardButton]]:
-        return [*keyboard, [InlineKeyboardButton("Главное меню", callback_data="main:home")]]
+        return [*keyboard, [InlineKeyboardButton("🏠 Главное меню", callback_data="main:home")]]
 
     async def _send_bond_screen(self, message: Message, action: str) -> None:
         screen = self.bond_radar.handle_action(action)
@@ -1301,23 +1329,23 @@ class IdeaManagerApp:
         include_main_menu: bool = False,
     ) -> InlineKeyboardMarkup:
         keyboard = [
-            [InlineKeyboardButton(project.label, callback_data=f"{action}:{project.key}")]
+            [InlineKeyboardButton(project_button_label(project), callback_data=f"{action}:{project.key}")]
             for project in self.registry.values()
         ]
         if include_all:
-            keyboard.append([InlineKeyboardButton("Все разделы", callback_data=f"{action}:__all__")])
+            keyboard.append([InlineKeyboardButton("🌐 Все разделы", callback_data=f"{action}:__all__")])
         if include_main_menu:
-            keyboard.append([InlineKeyboardButton("Главное меню", callback_data="main:home")])
+            keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main:home")])
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
     def _idea_actions(idea_id: str, project_key: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("Открыть идею", callback_data=f"show_idea:{idea_id}")],
-                [InlineKeyboardButton("Добавить комментарий", callback_data=f"comment_idea:{idea_id}")],
-                [InlineKeyboardButton("Назад к списку", callback_data=f"back_list_ideas:{project_key}")],
-                [InlineKeyboardButton("Главное меню", callback_data="main:home")],
+                [InlineKeyboardButton("📄 Открыть идею", callback_data=f"show_idea:{idea_id}")],
+                [InlineKeyboardButton("💬 Добавить комментарий", callback_data=f"comment_idea:{idea_id}")],
+                [InlineKeyboardButton("↩️ Назад к списку", callback_data=f"back_list_ideas:{project_key}")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main:home")],
             ]
         )
 
@@ -1325,11 +1353,11 @@ class IdeaManagerApp:
     def _context_actions(context_id: str, project_key: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("Открыть контекст", callback_data=f"show_context:{context_id}")],
-                [InlineKeyboardButton("Попросить summary", callback_data=f"summary_context:{context_id}")],
-                [InlineKeyboardButton("Сделать из контекста идею", callback_data=f"context_to_idea:{context_id}")],
-                [InlineKeyboardButton("Назад к списку", callback_data=f"back_list_context:{project_key}")],
-                [InlineKeyboardButton("Главное меню", callback_data="main:home")],
+                [InlineKeyboardButton("📚 Открыть контекст", callback_data=f"show_context:{context_id}")],
+                [InlineKeyboardButton("🧠 Попросить summary", callback_data=f"summary_context:{context_id}")],
+                [InlineKeyboardButton("💡 Сделать из контекста идею", callback_data=f"context_to_idea:{context_id}")],
+                [InlineKeyboardButton("↩️ Назад к списку", callback_data=f"back_list_context:{project_key}")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main:home")],
             ]
         )
 

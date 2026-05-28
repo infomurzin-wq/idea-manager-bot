@@ -32,12 +32,12 @@ def home_screen(store: DiscountRadarStore, user_id: int) -> dict:
         "text": format_home_screen(products),
         "buttons": [
             [
-                {"text": "Добавить товар", "callback_data": "discount:add"},
-                {"text": "Мои товары", "callback_data": "discount:list"},
+                {"text": "➕ Добавить товар", "callback_data": "discount:add"},
+                {"text": "📦 Мои товары", "callback_data": "discount:list"},
             ],
             [
-                {"text": "Проверить цены", "callback_data": "discount:check"},
-                {"text": "Главное меню", "callback_data": "main:home"},
+                {"text": "🔎 Проверить цены", "callback_data": "discount:check"},
+                {"text": "🏠 Главное меню", "callback_data": "main:home"},
             ],
         ],
     }
@@ -48,9 +48,9 @@ def list_screen(store: DiscountRadarStore, user_id: int) -> dict:
     buttons = _product_delete_buttons(products)
     buttons.extend(
         [
-            [{"text": "Добавить товар", "callback_data": "discount:add"}],
-            [{"text": "К Дисконт Радар", "callback_data": "discount:home"}],
-            [{"text": "Главное меню", "callback_data": "main:home"}],
+            [{"text": "➕ Добавить товар", "callback_data": "discount:add"}],
+            [{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}],
+            [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ]
     )
     return {"text": format_product_list(products), "buttons": buttons}
@@ -61,9 +61,9 @@ def check_screen(store: DiscountRadarStore, user_id: int) -> dict:
     return {
         "text": format_check_screen(products),
         "buttons": [
-            [{"text": "Мои товары", "callback_data": "discount:list"}],
-            [{"text": "К Дисконт Радар", "callback_data": "discount:home"}],
-            [{"text": "Главное меню", "callback_data": "main:home"}],
+            [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
+            [{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}],
+            [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ],
     }
 
@@ -94,7 +94,7 @@ def _product_delete_buttons(products: list[Product]) -> list[list[dict[str, str]
     return [
         [
             {
-                "text": f"Удалить: {product_button_label(product)}",
+                "text": f"🗑 Удалить: {product_button_label(product)}",
                 "callback_data": f"discount:delete:{product.id}",
             }
         ]
