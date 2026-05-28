@@ -1368,7 +1368,6 @@ class IdeaManagerApp:
                 [KeyboardButton(MENU_NEW_IDEA), KeyboardButton(MENU_NEW_CONTEXT)],
                 [KeyboardButton(MENU_LIST_IDEAS), KeyboardButton(MENU_LIST_CONTEXT)],
                 [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_DISCOUNT)],
-                [KeyboardButton(MENU_CANCEL)],
             ],
             resize_keyboard=True,
             one_time_keyboard=True,

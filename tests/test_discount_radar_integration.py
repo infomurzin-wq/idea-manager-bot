@@ -6,7 +6,7 @@ from pathlib import Path
 
 from telegram import InlineKeyboardButton
 
-from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS, MENU_DISCOUNT, MENU_PROJECTS
+from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS, MENU_CANCEL, MENU_DISCOUNT, MENU_PROJECTS
 from idea_manager_bot.config import Settings
 from idea_manager_bot.discount_radar.actions import is_ozon_url, parse_price
 from idea_manager_bot.discount_radar.store import DiscountRadarStore
@@ -95,6 +95,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn(MENU_DISCOUNT, labels)
         self.assertNotIn(MENU_PROJECTS, labels)
+        self.assertNotIn(MENU_CANCEL, labels)
 
     def test_main_menu_places_discount_radar_next_to_bonds(self) -> None:
         app = IdeaManagerApp(test_settings())
