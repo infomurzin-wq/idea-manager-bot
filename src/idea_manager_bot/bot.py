@@ -822,6 +822,7 @@ class IdeaManagerApp:
             [InlineKeyboardButton(self._list_label(record), callback_data=f"show_idea:{record.idea_id}")]
             for record in records[:10]
         ]
+        keyboard = self._with_main_menu_exit(keyboard)
         header = "Идеи во всех разделах:" if all_sections else f"Идеи в разделе `{project_key}`:"
         await message.reply_text(
             header,
@@ -849,6 +850,7 @@ class IdeaManagerApp:
             [InlineKeyboardButton(self._list_label(record), callback_data=f"show_context:{record.context_id}")]
             for record in records[:10]
         ]
+        keyboard = self._with_main_menu_exit(keyboard)
         header = "Контекст во всех разделах:" if all_sections else f"Контекст в разделе `{project_key}`:"
         await message.reply_text(
             header,
@@ -1132,6 +1134,12 @@ class IdeaManagerApp:
         if not title:
             return "Без названия"
         return title[:60]
+
+    @staticmethod
+    def _with_main_menu_exit(
+        keyboard: list[list[InlineKeyboardButton]],
+    ) -> list[list[InlineKeyboardButton]]:
+        return [*keyboard, [InlineKeyboardButton("Главное меню", callback_data="main:home")]]
 
     async def _send_bond_screen(self, message: Message, action: str) -> None:
         screen = self.bond_radar.handle_action(action)

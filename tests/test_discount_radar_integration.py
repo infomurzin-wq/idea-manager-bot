@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from telegram import InlineKeyboardButton
+
 from idea_manager_bot.bot import IdeaManagerApp, MENU_DISCOUNT, MENU_PROJECTS
 from idea_manager_bot.config import Settings
 from idea_manager_bot.discount_radar.actions import is_ozon_url, parse_price
@@ -115,6 +117,14 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn("main:home", idea_callbacks)
         self.assertIn("main:home", context_callbacks)
+
+    def test_list_keyboards_have_main_menu_exit(self) -> None:
+        keyboard = IdeaManagerApp._with_main_menu_exit(
+            [[InlineKeyboardButton("Item", callback_data="show_idea:item")]]
+        )
+
+        self.assertEqual("Главное меню", keyboard[-1][0].text)
+        self.assertEqual("main:home", keyboard[-1][0].callback_data)
 
     def test_main_menu_is_one_time_keyboard(self) -> None:
         app = IdeaManagerApp(test_settings())
