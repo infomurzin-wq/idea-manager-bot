@@ -7,9 +7,10 @@ import argparse
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import candidate_store
 import format_candidate
@@ -144,6 +145,11 @@ def handle_action(action: str, store_path: Path = candidate_store.DEFAULT_STORE_
         origin, value, page = parse_origin_key_and_page(action.removeprefix("bond:research-history:"))
         key = resolve_action_key(records, value)
         return research_history_screen(records, key, origin=origin, page=page)
+
+    if action.startswith("bond:calendar:"):
+        origin, value = parse_origin_and_key(action.removeprefix("bond:calendar:"))
+        key = resolve_action_key(records, value)
+        return calendar_screen(records, key, origin=origin)
 
     if action.startswith("bond:append-text:"):
         origin, value = parse_origin_and_key(action.removeprefix("bond:append-text:"))
@@ -392,6 +398,36 @@ def research_prompt_screen(
     }
 
 
+def calendar_screen(records: dict[str, dict[str, Any]], key: str, *, origin: str | None = None) -> dict[str, Any]:
+    record = candidate_store.get_candidate(records, key)
+    title = format_candidate.format_title(record["candidate"]["instrument"])
+    short_id = short_callback_id(record["storage"]["key"])
+    status = record["storage"]["status"]
+    back_status, back_page, back_sort = back_target(origin, status)
+    encoded_origin = origin_token(back_status, back_page, back_sort)
+    events = calendar_events(record)
+
+    lines = [f"📅 Календарь: {title}", ""]
+    buttons: list[list[dict[str, str]]] = []
+    if not events:
+        lines.extend(
+            [
+                "Не нашёл дат для календаря.",
+                "Заполни сбор заявок, размещение, первый день торгов, оферту или дату погашения в карточке.",
+            ]
+        )
+    else:
+        lines.append("Нажми на дату, чтобы добавить событие в Google Calendar.")
+        lines.append("")
+        for event in events:
+            lines.append(f"- {event['date_label']} {event['label']}")
+            buttons.append([url_button(f"📅 {event['button_label']}", event["url"])])
+
+    buttons.append([button("↩️ Назад к карточке", f"bond:show:{encoded_origin}:{short_id}")])
+    buttons.append(detail_back_row(back_status, back_page, back_sort))
+    return {"text": "\n".join(lines).strip(), "buttons": buttons}
+
+
 def research_history_screen(
     records: dict[str, dict[str, Any]],
     key: str,
@@ -476,6 +512,8 @@ def detail_buttons(record: dict[str, Any], *, origin: str | None = None) -> list
             button("🕘 История", f"bond:research-history:{encoded_origin}:{short_id}"),
         ]
     )
+    if status == "watchlist":
+        rows.append([button("📅 Календарь", f"bond:calendar:{encoded_origin}:{short_id}")])
 
     utility_row = [button("✏️ Данные", f"bond:append:{encoded_origin}:{short_id}")]
     isin = record["candidate"]["instrument"].get("isin")
@@ -579,6 +617,109 @@ def compact_title(value: str, *, limit: int = 24) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 1].rstrip() + "…"
+
+
+CALENDAR_DATE_FIELDS = [
+    ("book_building_date", "Сбор заявок"),
+    ("placement_date", "Размещение"),
+    ("first_trading_date", "Первый день торгов"),
+    ("maturity_date", "Погашение"),
+]
+
+
+def calendar_events(record: dict[str, Any]) -> list[dict[str, str]]:
+    candidate = record["candidate"]
+    title = format_candidate.format_title(candidate["instrument"])
+    terms = candidate["terms"]
+    events: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for field, label in CALENDAR_DATE_FIELDS:
+        parsed_date = parse_calendar_date(terms.get(field))
+        if parsed_date is not None:
+            add_calendar_event(events, seen, record, title, label, parsed_date)
+
+    for parsed_date in parse_calendar_dates_from_text(terms.get("offer")):
+        add_calendar_event(events, seen, record, title, "Оферта", parsed_date)
+
+    return sorted(events, key=lambda item: (item["date_key"], item["label"]))
+
+
+def add_calendar_event(
+    events: list[dict[str, str]],
+    seen: set[tuple[str, str]],
+    record: dict[str, Any],
+    title: str,
+    label: str,
+    date_value: datetime,
+) -> None:
+    date_key = date_value.strftime("%Y%m%d")
+    identity = (label, date_key)
+    if identity in seen:
+        return
+    seen.add(identity)
+    date_label = date_value.strftime("%d.%m.%Y")
+    events.append(
+        {
+            "label": label,
+            "date_key": date_key,
+            "date_label": date_label,
+            "button_label": f"{date_label} {label}",
+            "url": google_calendar_url(record, title, label, date_value),
+        }
+    )
+
+
+def parse_calendar_date(value: Any) -> datetime | None:
+    if value is None or value == "" or value == []:
+        return None
+    raw = str(value)
+    if match := re.search(r"(\d{2})\.(\d{2})\.(\d{4})", raw):
+        return datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)))
+    if match := re.search(r"(\d{4})-(\d{2})-(\d{2})", raw):
+        return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    return None
+
+
+def parse_calendar_dates_from_text(value: Any) -> list[datetime]:
+    if not value or str(value).strip().lower() in {"no", "нет"}:
+        return []
+    dates: list[datetime] = []
+    for match in re.finditer(r"(\d{2})\.(\d{2})\.(\d{4})", str(value)):
+        dates.append(datetime(int(match.group(3)), int(match.group(2)), int(match.group(1))))
+    return dates
+
+
+def google_calendar_url(record: dict[str, Any], title: str, label: str, date_value: datetime) -> str:
+    start = date_value.strftime("%Y%m%d")
+    end = (date_value + timedelta(days=1)).strftime("%Y%m%d")
+    params = {
+        "action": "TEMPLATE",
+        "text": f"Bond Radar: {label} - {title}",
+        "dates": f"{start}/{end}",
+        "details": calendar_event_details(record, label),
+    }
+    return f"https://calendar.google.com/calendar/render?{urlencode(params, safe='/')}"
+
+
+def calendar_event_details(record: dict[str, Any], label: str) -> str:
+    candidate = record["candidate"]
+    instrument = candidate["instrument"]
+    terms = candidate["terms"]
+    lines = [
+        f"Событие: {label}",
+        f"Эмитент: {format_candidate.display(instrument.get('issuer'))}",
+        f"Выпуск: {format_candidate.display(instrument.get('issue_name'))}",
+        f"ISIN: {format_candidate.display(instrument.get('isin'))}",
+        f"Рейтинг: {format_candidate.display(instrument.get('rating'))}",
+        f"Купон: {format_candidate.display(terms.get('coupon_raw') or terms.get('coupon'))}",
+        f"YTM: {format_candidate.display(terms.get('ytm_raw') or terms.get('ytm'))}",
+    ]
+    sources = candidate.get("dedup", {}).get("sources") or []
+    source_url = next((source.get("url") for source in sources if source.get("url")), None)
+    if source_url:
+        lines.append(f"Источник: {source_url}")
+    return "\n".join(lines)
 
 
 def display_short(value: Any) -> str:
@@ -852,6 +993,10 @@ def short_callback_id(key: str) -> str:
 
 def button(text: str, action: str) -> dict[str, str]:
     return {"text": text, "callback_data": action}
+
+
+def url_button(text: str, url: str) -> dict[str, str]:
+    return {"text": text, "url": url}
 
 
 if __name__ == "__main__":

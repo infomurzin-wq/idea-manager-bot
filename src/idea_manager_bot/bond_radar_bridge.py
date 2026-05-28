@@ -367,12 +367,18 @@ class BondRadarBridge:
     def inline_keyboard(button_rows: list[list[dict[str, str]]]) -> InlineKeyboardMarkup:
         keyboard = [
             [
-                InlineKeyboardButton(item["text"], callback_data=item["callback_data"])
+                BondRadarBridge._inline_button(item)
                 for item in row
             ]
             for row in button_rows
         ]
         return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def _inline_button(item: dict[str, str]) -> InlineKeyboardButton:
+        if url := item.get("url"):
+            return InlineKeyboardButton(item["text"], url=url)
+        return InlineKeyboardButton(item["text"], callback_data=item["callback_data"])
 
     @staticmethod
     def _unavailable_screen(reason: str) -> dict[str, Any]:

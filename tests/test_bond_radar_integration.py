@@ -962,6 +962,46 @@ class BondRadarIntegrationTest(unittest.TestCase):
         self.assertEqual("Новые кандидаты", markup.inline_keyboard[0][0].text)
         self.assertEqual("bond:list:new", markup.inline_keyboard[0][0].callback_data)
 
+    def test_watchlist_card_has_google_calendar_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store_path = Path(tmp_dir) / "candidates_store.jsonl"
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=store_path,
+            )
+            telegram_actions = bridge._import_from_scripts_dir("telegram_actions")
+            short_id = telegram_actions.short_callback_id("issuer_issue:рольф|1P9")
+
+            screen = bridge.handle_action(f"bond:watch:{short_id}")
+            calendar_callback = next(
+                item["callback_data"]
+                for row in screen["buttons"]
+                for item in row
+                if item.get("callback_data", "").startswith("bond:calendar:")
+            )
+
+            calendar_screen = bridge.handle_action(calendar_callback)
+            url_buttons = [
+                item
+                for row in calendar_screen["buttons"]
+                for item in row
+                if item.get("url")
+            ]
+            markup = BondRadarBridge.inline_keyboard(calendar_screen["buttons"])
+
+            self.assertIn("📅 Календарь: РОЛЬФ 1Р9", calendar_screen["text"])
+            self.assertIn("21.05.2026 Сбор заявок", calendar_screen["text"])
+            self.assertTrue(url_buttons)
+            self.assertIn("calendar.google.com/calendar/render", url_buttons[0]["url"])
+            self.assertIn("dates=20260521/20260522", url_buttons[0]["url"])
+            self.assertTrue(
+                any(
+                    button.url and button.url.startswith("https://calendar.google.com/calendar/render")
+                    for row in markup.inline_keyboard
+                    for button in row
+                )
+            )
+
     def test_bridge_unavailable_screen_has_main_menu_button(self) -> None:
         bridge = BondRadarBridge(
             scripts_dir=Path("/definitely/missing/bond-radar/scripts"),
