@@ -126,6 +126,23 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
         self.assertEqual("Главное меню", keyboard[-1][0].text)
         self.assertEqual("main:home", keyboard[-1][0].callback_data)
 
+    def test_project_selector_can_include_main_menu_exit(self) -> None:
+        app = IdeaManagerApp(test_settings())
+
+        keyboard = app._project_selector(
+            "list_ideas",
+            include_all=True,
+            include_main_menu=True,
+        )
+        callbacks = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+
+        self.assertIn("list_ideas:__all__", callbacks)
+        self.assertIn("main:home", callbacks)
+
     def test_main_menu_is_one_time_keyboard(self) -> None:
         app = IdeaManagerApp(test_settings())
 

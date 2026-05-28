@@ -192,14 +192,22 @@ class IdeaManagerApp:
         if text == MENU_LIST_IDEAS:
             await update.message.reply_text(
                 "По какому разделу показать идеи?",
-                reply_markup=self._project_selector("list_ideas", include_all=True),
+                reply_markup=self._project_selector(
+                    "list_ideas",
+                    include_all=True,
+                    include_main_menu=True,
+                ),
             )
             return
 
         if text == MENU_LIST_CONTEXT:
             await update.message.reply_text(
                 "По какому разделу показать контекст?",
-                reply_markup=self._project_selector("list_context", include_all=True),
+                reply_markup=self._project_selector(
+                    "list_context",
+                    include_all=True,
+                    include_main_menu=True,
+                ),
             )
             return
 
@@ -1286,13 +1294,20 @@ class IdeaManagerApp:
             return action.removeprefix(prefix)
         return "sum_desc"
 
-    def _project_selector(self, action: str, include_all: bool = False) -> InlineKeyboardMarkup:
+    def _project_selector(
+        self,
+        action: str,
+        include_all: bool = False,
+        include_main_menu: bool = False,
+    ) -> InlineKeyboardMarkup:
         keyboard = [
             [InlineKeyboardButton(project.label, callback_data=f"{action}:{project.key}")]
             for project in self.registry.values()
         ]
         if include_all:
             keyboard.append([InlineKeyboardButton("Все разделы", callback_data=f"{action}:__all__")])
+        if include_main_menu:
+            keyboard.append([InlineKeyboardButton("Главное меню", callback_data="main:home")])
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
