@@ -31,6 +31,7 @@ from idea_manager_bot.bond_portfolio import render_cashflow_screen, render_portf
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.config import Settings, load_settings
 from idea_manager_bot.context_loader import load_project_context
+from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
 from idea_manager_bot.exporter import SyncExporter
 from idea_manager_bot.link_reader import LinkReader
 from idea_manager_bot.llm import LLMService
@@ -50,6 +51,7 @@ MENU_NEW_CONTEXT = "Новый контекст"
 MENU_LIST_IDEAS = "Список идей"
 MENU_LIST_CONTEXT = "Список контекста"
 MENU_BONDS = "Облигации"
+MENU_DISCOUNT = "Дисконт Радар"
 MENU_PROJECTS = "Разделы"
 MENU_CANCEL = "Отмена"
 
@@ -63,6 +65,7 @@ class IdeaManagerApp:
         self.link_reader = LinkReader()
         self.exporter = SyncExporter(settings)
         self.bond_radar = BondRadarBridge.from_workspace(settings.workspace_root)
+        self.discount_radar = DiscountRadarBridge.from_data_dir(settings.bot_data_dir)
         self.t_invest = TInvestClient(settings.t_invest_token)
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -85,7 +88,8 @@ class IdeaManagerApp:
             f"`{MENU_NEW_CONTEXT}`: выбери раздел и отправь полезный материал без обсуждения.\n"
             f"`{MENU_LIST_IDEAS}`: открыть список идей кнопками.\n"
             f"`{MENU_LIST_CONTEXT}`: открыть список контекста кнопками.\n"
-            f"`{MENU_BONDS}`: открыть Bond Radar.",
+            f"`{MENU_BONDS}`: открыть Bond Radar.\n"
+            f"`{MENU_DISCOUNT}`: открыть Дисконт Радар.",
             parse_mode="Markdown",
             reply_markup=self._main_menu(),
         )
@@ -94,6 +98,11 @@ class IdeaManagerApp:
         if not update.message:
             return
         await self._send_bond_screen(update.message, "bond:home")
+
+    async def discount_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        await self._send_discount_screen(update.message, "discount:home", update.effective_user.id)
 
     async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
@@ -197,6 +206,10 @@ class IdeaManagerApp:
             await self._send_bond_screen(update.message, "bond:home")
             return
 
+        if text == MENU_DISCOUNT:
+            await self._send_discount_screen(update.message, "discount:home", update.effective_user.id)
+            return
+
         if text == MENU_PROJECTS:
             await self.projects_command(update, context)
             return
@@ -269,6 +282,19 @@ class IdeaManagerApp:
 
         if data.startswith("bond:"):
             await self._send_bond_screen(query.message, data)
+            return
+
+        if data == "discount:add":
+            context.user_data["pending_action"] = "discount_add_url"
+            await query.message.reply_text(
+                "Пришли ссылку на товар Ozon.",
+                reply_markup=self._main_menu(),
+            )
+            return
+
+        if data.startswith("discount:"):
+            user_id = update.effective_user.id if update.effective_user else 0
+            await self._send_discount_screen(query.message, data, user_id)
             return
 
         if ":" not in data:
@@ -350,6 +376,8 @@ class IdeaManagerApp:
             "bond_append_candidate",
             "bond_edit_field",
             "bond_research",
+            "discount_add_url",
+            "discount_add_target",
         }:
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
@@ -358,6 +386,10 @@ class IdeaManagerApp:
                 "Сначала выбери действие через меню.",
                 reply_markup=self._main_menu(),
             )
+            return
+
+        if pending_action in {"discount_add_url", "discount_add_target"}:
+            await self._handle_discount_input(update, context, pending_action)
             return
 
         payload = await self._extract_message_payload(update, context)
@@ -1030,6 +1062,7 @@ class IdeaManagerApp:
             MENU_LIST_IDEAS.lower(),
             MENU_LIST_CONTEXT.lower(),
             MENU_BONDS.lower(),
+            MENU_DISCOUNT.lower(),
             MENU_PROJECTS.lower(),
             MENU_CANCEL.lower(),
         }
@@ -1118,6 +1151,72 @@ class IdeaManagerApp:
         await message.reply_text(
             screen["text"][:4000],
             reply_markup=self.bond_radar.inline_keyboard(screen.get("buttons", [])),
+        )
+
+    async def _send_discount_screen(self, message: Message, action: str, user_id: int) -> None:
+        screen = await asyncio.to_thread(
+            self.discount_radar.handle_action,
+            action,
+            user_id=user_id,
+        )
+        await message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.discount_radar.inline_keyboard(screen.get("buttons", [])),
+        )
+
+    async def _handle_discount_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        pending_action: str,
+    ) -> None:
+        if not update.message:
+            return
+        text = (update.message.text or "").strip()
+
+        if pending_action == "discount_add_url":
+            if not self.discount_radar.is_ozon_url(text):
+                await update.message.reply_text(
+                    "Это не похоже на ссылку Ozon. Пришли ссылку вида https://www.ozon.ru/...",
+                    reply_markup=self._main_menu(),
+                )
+                return
+            context.user_data["pending_discount_url"] = text
+            context.user_data["pending_action"] = "discount_add_target"
+            await update.message.reply_text(
+                "Укажи целевую цену в рублях, например 1490.",
+                reply_markup=self._main_menu(),
+            )
+            return
+
+        target_price = self.discount_radar.parse_price(text)
+        if target_price is None or target_price <= 0:
+            await update.message.reply_text(
+                "Не понял цену. Напиши число, например 1490.",
+                reply_markup=self._main_menu(),
+            )
+            return
+
+        url = context.user_data.get("pending_discount_url")
+        if not url:
+            self._reset_flow(context)
+            await update.message.reply_text(
+                "Не нашёл ссылку товара. Начни добавление заново.",
+                reply_markup=self._main_menu(),
+            )
+            return
+
+        user_id = update.effective_user.id if update.effective_user else 0
+        screen = await asyncio.to_thread(
+            self.discount_radar.add_product,
+            user_id=user_id,
+            url=url,
+            target_price=target_price,
+        )
+        self._reset_flow(context)
+        await update.message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.discount_radar.inline_keyboard(screen.get("buttons", [])),
         )
 
     def _build_bond_portfolio_screen(self, action: str) -> dict[str, Any]:
@@ -1214,7 +1313,7 @@ class IdeaManagerApp:
             [
                 [KeyboardButton(MENU_NEW_IDEA), KeyboardButton(MENU_NEW_CONTEXT)],
                 [KeyboardButton(MENU_LIST_IDEAS), KeyboardButton(MENU_LIST_CONTEXT)],
-                [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_PROJECTS)],
+                [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_DISCOUNT)],
                 [KeyboardButton(MENU_CANCEL)],
             ],
             resize_keyboard=True,
@@ -1229,6 +1328,7 @@ class IdeaManagerApp:
         context.user_data.pop("pending_bond_append_action", None)
         context.user_data.pop("pending_bond_edit_action", None)
         context.user_data.pop("pending_bond_research_action", None)
+        context.user_data.pop("pending_discount_url", None)
 
     @staticmethod
     def _author_name(update: Update) -> str:
@@ -1245,6 +1345,7 @@ async def post_init(application: Application) -> None:
         BotCommand("help", "Подсказка"),
         BotCommand("myid", "Показать chat_id"),
         BotCommand("bonds", "Открыть Bond Radar"),
+        BotCommand("discount", "Открыть Дисконт Радар"),
         BotCommand("projects", "Список разделов"),
         BotCommand("list", "Список идей"),
         BotCommand("show", "Показать идею по ID"),
@@ -1262,6 +1363,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("help", app_logic.help_command))
     application.add_handler(CommandHandler("myid", app_logic.myid_command))
     application.add_handler(CommandHandler("bonds", app_logic.bonds_command))
+    application.add_handler(CommandHandler("discount", app_logic.discount_command))
     application.add_handler(CommandHandler("projects", app_logic.projects_command))
     application.add_handler(CommandHandler("list", app_logic.list_command))
     application.add_handler(CommandHandler("show", app_logic.show_command))
