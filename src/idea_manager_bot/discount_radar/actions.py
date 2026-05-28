@@ -81,12 +81,12 @@ def add_product_from_input(
     *,
     user_id: int,
     url: str,
-    target_price: int,
+    reference_price: int,
 ) -> Product:
     return store.add_product(
         user_id=user_id,
         url=url,
-        target_price=target_price,
+        reference_price=reference_price,
     )
 
 
@@ -100,4 +100,3 @@ def _product_delete_buttons(products: list[Product]) -> list[list[dict[str, str]
         ]
         for product in products[:10]
     ]
-

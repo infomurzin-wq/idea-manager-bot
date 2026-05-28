@@ -37,18 +37,20 @@ class DiscountRadarBridge:
             "buttons": [[{"text": "К Дисконт Радар", "callback_data": "discount:home"}]],
         }
 
-    def add_product(self, *, user_id: int, url: str, target_price: int) -> dict[str, Any]:
+    def add_product(self, *, user_id: int, url: str, reference_price: int) -> dict[str, Any]:
         product = actions.add_product_from_input(
             self.store,
             user_id=user_id,
             url=url,
-            target_price=target_price,
+            reference_price=reference_price,
         )
         return {
             "text": (
                 "Товар добавлен в Дисконт Радар.\n\n"
                 f"ID: {product.id}\n"
-                f"Целевая цена: {target_price} ₽\n\n"
+                f"Последняя цена: {reference_price} ₽\n\n"
+                "Буду сигналить, если новая цена станет ниже этой суммы. "
+                "Даже небольшое снижение считаем поводом для уведомления.\n\n"
                 "Реальное чтение цены Ozon подключим отдельным этапом."
             ),
             "buttons": [
@@ -76,4 +78,3 @@ class DiscountRadarBridge:
             for row in button_rows
         ]
         return InlineKeyboardMarkup(keyboard)
-

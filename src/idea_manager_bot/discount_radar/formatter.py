@@ -13,7 +13,7 @@ def format_home_screen(products: list[Product]) -> str:
     active_count = len(products)
     return (
         "Дисконт Радар\n\n"
-        "Отслеживаем товары и целевые цены.\n"
+        "Отслеживаем товары и последнюю известную цену.\n"
         f"Активных товаров: {active_count}\n\n"
         "На первом этапе проверка Ozon ещё не подключена: "
         "сейчас собираем удобный список и сценарий добавления."
@@ -29,8 +29,8 @@ def format_product_list(products: list[Product]) -> str:
         title = product.title or "Без названия"
         lines.append(
             f"{index}. {title}\n"
-            f"   цель: {format_price(product.target_price)}\n"
-            f"   сейчас: {format_price(product.last_price)}\n"
+            f"   последняя цена: {format_price(product.reference_price)}\n"
+            f"   новая цена: {format_price(product.last_price)}\n"
             f"   ссылка: {product.url}"
         )
     return "\n\n".join(lines)
@@ -44,11 +44,11 @@ def format_check_screen(products: list[Product]) -> str:
     for product in products:
         title = product.title or "Без названия"
         if product.last_price is None:
-            status = "цена пока неизвестна"
-        elif product.last_price <= product.target_price:
-            status = "цена достигла цели"
+            status = "новая цена пока неизвестна"
+        elif product.last_price < product.reference_price:
+            status = "подешевел"
         else:
-            status = "пока выше цели"
+            status = "не дешевле последней цены"
         lines.append(f"- {title}: {status}")
 
     lines.append("\nРеальную проверку Ozon подключим отдельным этапом.")
@@ -58,4 +58,3 @@ def format_check_screen(products: list[Product]) -> str:
 def product_button_label(product: Product) -> str:
     title = product.title or product.url.replace("https://", "").replace("http://", "")
     return title[:48]
-

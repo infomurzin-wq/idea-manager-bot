@@ -15,6 +15,7 @@ from telegram import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     Update,
 )
 from telegram.ext import (
@@ -288,7 +289,7 @@ class IdeaManagerApp:
             context.user_data["pending_action"] = "discount_add_url"
             await query.message.reply_text(
                 "Пришли ссылку на товар Ozon.",
-                reply_markup=self._main_menu(),
+                reply_markup=ReplyKeyboardRemove(),
             )
             return
 
@@ -1178,22 +1179,22 @@ class IdeaManagerApp:
             if not self.discount_radar.is_ozon_url(text):
                 await update.message.reply_text(
                     "Это не похоже на ссылку Ozon. Пришли ссылку вида https://www.ozon.ru/...",
-                    reply_markup=self._main_menu(),
+                    reply_markup=ReplyKeyboardRemove(),
                 )
                 return
             context.user_data["pending_discount_url"] = text
             context.user_data["pending_action"] = "discount_add_target"
             await update.message.reply_text(
-                "Укажи целевую цену в рублях, например 1490.",
-                reply_markup=self._main_menu(),
+                "Укажи последнюю известную цену в рублях, например 1490.",
+                reply_markup=ReplyKeyboardRemove(),
             )
             return
 
-        target_price = self.discount_radar.parse_price(text)
-        if target_price is None or target_price <= 0:
+        reference_price = self.discount_radar.parse_price(text)
+        if reference_price is None or reference_price <= 0:
             await update.message.reply_text(
                 "Не понял цену. Напиши число, например 1490.",
-                reply_markup=self._main_menu(),
+                reply_markup=ReplyKeyboardRemove(),
             )
             return
 
@@ -1211,7 +1212,7 @@ class IdeaManagerApp:
             self.discount_radar.add_product,
             user_id=user_id,
             url=url,
-            target_price=target_price,
+            reference_price=reference_price,
         )
         self._reset_flow(context)
         await update.message.reply_text(
@@ -1317,6 +1318,8 @@ class IdeaManagerApp:
                 [KeyboardButton(MENU_CANCEL)],
             ],
             resize_keyboard=True,
+            one_time_keyboard=True,
+            is_persistent=False,
         )
 
     @staticmethod

@@ -35,12 +35,12 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             product = store.add_product(
                 user_id=100,
                 url="https://www.ozon.ru/product/test",
-                target_price=1490,
+                reference_price=1490,
             )
 
             products = store.list_products(100)
             self.assertEqual(product.id, products[0].id)
-            self.assertEqual(1490, products[0].target_price)
+            self.assertEqual(1490, products[0].reference_price)
             self.assertEqual([], store.list_products(200))
 
     def test_bridge_adds_and_deletes_product(self) -> None:
@@ -50,7 +50,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             add_screen = bridge.add_product(
                 user_id=100,
                 url="https://www.ozon.ru/product/test",
-                target_price=1490,
+                reference_price=1490,
             )
             products = bridge.store.list_products(100)
             delete_screen = bridge.handle_action(
@@ -68,7 +68,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             bridge.add_product(
                 user_id=100,
                 url="https://www.ozon.ru/product/test",
-                target_price=1490,
+                reference_price=1490,
             )
 
             screen = bridge.handle_action("discount:list", user_id=100)
@@ -100,6 +100,45 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
         rows = [[button.text for button in row] for row in app._main_menu().keyboard]
 
         self.assertIn(["Облигации", MENU_DISCOUNT], rows)
+
+    def test_main_menu_is_one_time_keyboard(self) -> None:
+        app = IdeaManagerApp(test_settings())
+
+        menu = app._main_menu()
+
+        self.assertTrue(menu.one_time_keyboard)
+        self.assertFalse(menu.is_persistent)
+
+    def test_store_migrates_old_target_price_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "products.json"
+            path.write_text(
+                """
+                {
+                  "products": [
+                    {
+                      "id": "old-item",
+                      "user_id": 100,
+                      "url": "https://www.ozon.ru/product/test",
+                      "target_price": 1490,
+                      "title": null,
+                      "last_price": null,
+                      "last_checked_at": null,
+                      "last_error": null,
+                      "is_active": true,
+                      "created_at": "2026-05-28T10:00:00+00:00",
+                      "updated_at": "2026-05-28T10:00:00+00:00"
+                    }
+                  ]
+                }
+                """,
+                encoding="utf-8",
+            )
+            store = DiscountRadarStore(path)
+
+            products = store.list_products(100)
+
+            self.assertEqual(1490, products[0].reference_price)
 
     def test_parses_price_and_validates_ozon_url(self) -> None:
         self.assertEqual(1490, parse_price("1 490 ₽"))

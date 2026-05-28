@@ -12,7 +12,7 @@ class Product:
     id: str
     user_id: int
     url: str
-    target_price: int
+    reference_price: int
     title: str | None
     last_price: int | None
     last_checked_at: str | None
@@ -42,7 +42,7 @@ class DiscountRadarStore:
         *,
         user_id: int,
         url: str,
-        target_price: int,
+        reference_price: int,
         title: str | None = None,
         last_price: int | None = None,
     ) -> Product:
@@ -54,7 +54,7 @@ class DiscountRadarStore:
                     id=product.id,
                     user_id=product.user_id,
                     url=product.url,
-                    target_price=target_price,
+                    reference_price=reference_price,
                     title=title or product.title,
                     last_price=last_price if last_price is not None else product.last_price,
                     last_checked_at=product.last_checked_at,
@@ -71,7 +71,7 @@ class DiscountRadarStore:
             id=uuid4().hex[:10],
             user_id=user_id,
             url=url,
-            target_price=target_price,
+            reference_price=reference_price,
             title=title,
             last_price=last_price,
             last_checked_at=None,
@@ -96,7 +96,7 @@ class DiscountRadarStore:
                         id=product.id,
                         user_id=product.user_id,
                         url=product.url,
-                        target_price=product.target_price,
+                        reference_price=product.reference_price,
                         title=product.title,
                         last_price=product.last_price,
                         last_checked_at=product.last_checked_at,
@@ -130,7 +130,7 @@ class DiscountRadarStore:
                     id=product.id,
                     user_id=product.user_id,
                     url=product.url,
-                    target_price=product.target_price,
+                    reference_price=product.reference_price,
                     title=product.title,
                     last_price=price if price is not None else product.last_price,
                     last_checked_at=now,
@@ -148,7 +148,7 @@ class DiscountRadarStore:
         if not self.store_path.exists():
             return []
         payload = json.loads(self.store_path.read_text(encoding="utf-8"))
-        return [Product(**item) for item in payload.get("products", [])]
+        return [self._product_from_payload(item) for item in payload.get("products", [])]
 
     def _save(self, products: list[Product]) -> None:
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,3 +158,11 @@ class DiscountRadarStore:
             encoding="utf-8",
         )
 
+    @staticmethod
+    def _product_from_payload(item: dict) -> Product:
+        # Compatibility with the first deployed MVP, where the baseline price
+        # was named target_price before the product rule was clarified.
+        if "reference_price" not in item and "target_price" in item:
+            item = {**item, "reference_price": item["target_price"]}
+        item = {key: value for key, value in item.items() if key != "target_price"}
+        return Product(**item)
