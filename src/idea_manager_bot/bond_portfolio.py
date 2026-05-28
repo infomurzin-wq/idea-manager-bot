@@ -129,9 +129,12 @@ def format_position(index: int, item: dict[str, Any]) -> list[str]:
     rating = item.get("rating") or "н/д"
     return [
         f"{index}. {name}",
-        f"   ISIN: {isin}",
-        f"   Кол-во: {quantity} | Сумма: {position_sum}",
-        f"   Ставка: {coupon_rate} | Погашение: {maturity} | Рейтинг: {rating}",
+        f"ISIN: {isin}",
+        f"Кол-во: {quantity}",
+        f"Сумма: {position_sum}",
+        f"Ставка: {coupon_rate}",
+        f"Погашение: {maturity}",
+        f"Рейтинг: {rating}",
         "",
     ]
 

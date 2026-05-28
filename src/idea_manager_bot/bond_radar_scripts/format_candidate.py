@@ -168,6 +168,8 @@ def format_candidate_list_message(
         return "\n".join(lines)
 
     for index, record in enumerate(visible, start=offset + 1):
+        if index > offset + 1:
+            lines.append("")
         lines.extend(format_candidate_list_item(index, record))
 
     if total_count is not None and total > len(visible):
@@ -198,8 +200,8 @@ def format_candidate_list_item(index: int, record: dict[str, Any]) -> list[str]:
     ]
     return [
         f"{index}. {title}{suffix}",
-        f"   {' | '.join(details)}",
-        f"   key: {item['key']}",
+        " | ".join(details),
+        f"key: {item['key']}",
     ]
 
 

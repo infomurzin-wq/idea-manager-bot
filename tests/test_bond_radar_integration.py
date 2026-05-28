@@ -611,8 +611,9 @@ class BondRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn("Портфель облигаций", screen["text"])
         self.assertLess(screen["text"].index("Large Bond"), screen["text"].index("Small Bond"))
-        self.assertIn("Ставка: 10.00%", screen["text"])
-        self.assertIn("Погашение: 01.01.2027", screen["text"])
+        self.assertIn("Кол-во: 2\nСумма: 500 ₽", screen["text"])
+        self.assertIn("Ставка: 10.00%\nПогашение: 01.01.2027\nРейтинг: н/д", screen["text"])
+        self.assertNotIn("| Погашение:", screen["text"])
         callbacks = [item["callback_data"] for row in screen["buttons"] for item in row]
         self.assertIn("bond:portfolio:maturity_asc", callbacks)
         self.assertIn("bond:portfolio:coupon_desc", callbacks)
