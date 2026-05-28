@@ -101,6 +101,21 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
 
         self.assertIn(["Облигации", MENU_DISCOUNT], rows)
 
+    def test_idea_and_context_action_cards_have_main_menu_exit(self) -> None:
+        idea_callbacks = [
+            button.callback_data
+            for row in IdeaManagerApp._idea_actions("idea-1", "learning-programming").inline_keyboard
+            for button in row
+        ]
+        context_callbacks = [
+            button.callback_data
+            for row in IdeaManagerApp._context_actions("ctx-1", "learning-programming").inline_keyboard
+            for button in row
+        ]
+
+        self.assertIn("main:home", idea_callbacks)
+        self.assertIn("main:home", context_callbacks)
+
     def test_main_menu_is_one_time_keyboard(self) -> None:
         app = IdeaManagerApp(test_settings())
 

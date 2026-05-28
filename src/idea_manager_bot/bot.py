@@ -1294,6 +1294,7 @@ class IdeaManagerApp:
                 [InlineKeyboardButton("Открыть идею", callback_data=f"show_idea:{idea_id}")],
                 [InlineKeyboardButton("Добавить комментарий", callback_data=f"comment_idea:{idea_id}")],
                 [InlineKeyboardButton("Назад к списку", callback_data=f"back_list_ideas:{project_key}")],
+                [InlineKeyboardButton("Главное меню", callback_data="main:home")],
             ]
         )
 
@@ -1305,6 +1306,7 @@ class IdeaManagerApp:
                 [InlineKeyboardButton("Попросить summary", callback_data=f"summary_context:{context_id}")],
                 [InlineKeyboardButton("Сделать из контекста идею", callback_data=f"context_to_idea:{context_id}")],
                 [InlineKeyboardButton("Назад к списку", callback_data=f"back_list_context:{project_key}")],
+                [InlineKeyboardButton("Главное меню", callback_data="main:home")],
             ]
         )
 
