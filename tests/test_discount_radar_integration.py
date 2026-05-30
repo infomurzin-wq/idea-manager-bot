@@ -64,7 +64,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Товар удалён", delete_screen["text"])
             self.assertEqual([], bridge.store.list_products(100))
 
-    def test_list_screen_shows_product_and_delete_button(self) -> None:
+    def test_list_screen_opens_product_card(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             bridge = DiscountRadarBridge(Path(tmp_dir) / "products.json")
             bridge.add_product(
@@ -82,7 +82,72 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
 
             self.assertIn("Мои товары", screen["text"])
             self.assertIn("1 490 ₽", screen["text"])
-            self.assertTrue(any(callback.startswith("discount:delete:") for callback in callbacks))
+            self.assertTrue(any(callback.startswith("discount:show:") for callback in callbacks))
+
+    def test_product_card_has_detail_actions_and_url_button(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bridge = DiscountRadarBridge(Path(tmp_dir) / "products.json")
+            bridge.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/test",
+                reference_price=1490,
+            )
+            product = bridge.store.list_products(100)[0]
+
+            screen = bridge.handle_action(f"discount:show:{product.id}", user_id=100)
+            callbacks = [
+                item.get("callback_data")
+                for row in screen["buttons"]
+                for item in row
+                if item.get("callback_data")
+            ]
+            urls = [
+                item.get("url")
+                for row in screen["buttons"]
+                for item in row
+                if item.get("url")
+            ]
+
+            self.assertIn("Последняя известная цена: 1 490 ₽", screen["text"])
+            self.assertIn("Новая найденная цена: неизвестно", screen["text"])
+            self.assertIn("Последняя проверка: не проверялся", screen["text"])
+            self.assertIn(f"discount:edit-price:{product.id}", callbacks)
+            self.assertIn(f"discount:delete:{product.id}", callbacks)
+            self.assertIn("discount:list", callbacks)
+            self.assertIn("main:home", callbacks)
+            self.assertEqual(["https://www.ozon.ru/product/test"], urls)
+
+    def test_bridge_inline_keyboard_supports_url_buttons(self) -> None:
+        keyboard = DiscountRadarBridge.inline_keyboard(
+            [[{"text": "Открыть", "url": "https://www.ozon.ru/product/test"}]]
+        )
+
+        button = keyboard.inline_keyboard[0][0]
+
+        self.assertEqual("Открыть", button.text)
+        self.assertEqual("https://www.ozon.ru/product/test", button.url)
+        self.assertIsNone(button.callback_data)
+
+    def test_updates_reference_price_from_product_card(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bridge = DiscountRadarBridge(Path(tmp_dir) / "products.json")
+            bridge.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/test",
+                reference_price=1490,
+            )
+            product = bridge.store.list_products(100)[0]
+
+            screen = bridge.update_reference_price(
+                user_id=100,
+                product_id=product.id,
+                reference_price=1390,
+            )
+
+            updated = bridge.store.list_products(100)[0]
+            self.assertEqual(1390, updated.reference_price)
+            self.assertIn("Последняя известная цена обновлена", screen["text"])
+            self.assertIn("Последняя известная цена: 1 390 ₽", screen["text"])
 
     def test_main_menu_contains_discount_radar(self) -> None:
         app = IdeaManagerApp(test_settings())

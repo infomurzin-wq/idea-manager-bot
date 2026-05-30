@@ -37,6 +37,12 @@ class DiscountRadarStore:
             if product.user_id == user_id and product.is_active
         ]
 
+    def get_product(self, *, user_id: int, product_id: str) -> Product | None:
+        for product in self._load():
+            if product.user_id == user_id and product.id == product_id and product.is_active:
+                return product
+        return None
+
     def add_product(
         self,
         *,
@@ -113,6 +119,35 @@ class DiscountRadarStore:
         if changed:
             self._save(updated_products)
         return changed
+
+    def update_reference_price(
+        self,
+        *,
+        user_id: int,
+        product_id: str,
+        reference_price: int,
+    ) -> Product | None:
+        products = self._load()
+        now = utc_now_iso()
+        for index, product in enumerate(products):
+            if product.user_id == user_id and product.id == product_id and product.is_active:
+                updated = Product(
+                    id=product.id,
+                    user_id=product.user_id,
+                    url=product.url,
+                    reference_price=reference_price,
+                    title=product.title,
+                    last_price=product.last_price,
+                    last_checked_at=product.last_checked_at,
+                    last_error=product.last_error,
+                    is_active=product.is_active,
+                    created_at=product.created_at,
+                    updated_at=now,
+                )
+                products[index] = updated
+                self._save(products)
+                return updated
+        return None
 
     def update_check_result(
         self,

@@ -337,6 +337,17 @@ class IdeaManagerApp:
             )
             return
 
+        if data.startswith("discount:edit-price:"):
+            context.user_data["pending_action"] = "discount_edit_reference_price"
+            context.user_data["pending_discount_product_id"] = data.removeprefix(
+                "discount:edit-price:"
+            )
+            await query.message.reply_text(
+                "Укажи новую последнюю известную цену в рублях, например 1490.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
         if data.startswith("discount:"):
             user_id = update.effective_user.id if update.effective_user else 0
             await self._send_discount_screen(query.message, data, user_id)
@@ -423,6 +434,7 @@ class IdeaManagerApp:
             "bond_research",
             "discount_add_url",
             "discount_add_target",
+            "discount_edit_reference_price",
         }:
             recovered = await self._try_recover_context_append(update, context)
             if recovered:
@@ -433,7 +445,11 @@ class IdeaManagerApp:
             )
             return
 
-        if pending_action in {"discount_add_url", "discount_add_target"}:
+        if pending_action in {
+            "discount_add_url",
+            "discount_add_target",
+            "discount_edit_reference_price",
+        }:
             await self._handle_discount_input(update, context, pending_action)
             return
 
@@ -1242,6 +1258,30 @@ class IdeaManagerApp:
             )
             return
 
+        if pending_action == "discount_edit_reference_price":
+            product_id = context.user_data.get("pending_discount_product_id")
+            if not product_id:
+                self._reset_flow(context)
+                await update.message.reply_text(
+                    "Не нашёл товар для изменения цены. Открой карточку заново.",
+                    reply_markup=self._main_menu(),
+                )
+                return
+
+            user_id = update.effective_user.id if update.effective_user else 0
+            screen = await asyncio.to_thread(
+                self.discount_radar.update_reference_price,
+                user_id=user_id,
+                product_id=product_id,
+                reference_price=reference_price,
+            )
+            self._reset_flow(context)
+            await update.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.discount_radar.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
         url = context.user_data.get("pending_discount_url")
         if not url:
             self._reset_flow(context)
@@ -1384,6 +1424,7 @@ class IdeaManagerApp:
         context.user_data.pop("pending_bond_edit_action", None)
         context.user_data.pop("pending_bond_research_action", None)
         context.user_data.pop("pending_discount_url", None)
+        context.user_data.pop("pending_discount_product_id", None)
 
     @staticmethod
     def _author_name(update: Update) -> str:

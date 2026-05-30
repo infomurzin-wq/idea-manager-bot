@@ -36,6 +36,21 @@ def format_product_list(products: list[Product]) -> str:
     return "\n\n".join(lines)
 
 
+def format_product_detail(product: Product) -> str:
+    title = product.title or "Без названия"
+    last_checked = product.last_checked_at or "не проверялся"
+    last_error = product.last_error or "нет"
+    return (
+        "🛒 Дисконт Радар\n\n"
+        f"📦 {title}\n\n"
+        f"Ссылка: {product.url}\n"
+        f"Последняя известная цена: {format_price(product.reference_price)}\n"
+        f"Новая найденная цена: {format_price(product.last_price)}\n"
+        f"Последняя проверка: {last_checked}\n"
+        f"Ошибка проверки: {last_error}"
+    )
+
+
 def format_check_screen(products: list[Product]) -> str:
     if not products:
         return "🛒 Дисконт Радар\n\nСписок пуст. Сначала добавь товар."

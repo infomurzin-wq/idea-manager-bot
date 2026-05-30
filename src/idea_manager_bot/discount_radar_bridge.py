@@ -29,6 +29,9 @@ class DiscountRadarBridge:
             return actions.list_screen(self.store, user_id)
         if action == "discount:check":
             return actions.check_screen(self.store, user_id)
+        if action.startswith("discount:show:"):
+            product_id = action.removeprefix("discount:show:")
+            return actions.product_screen(self.store, user_id, product_id)
         if action.startswith("discount:delete:"):
             product_id = action.removeprefix("discount:delete:")
             return actions.delete_product_screen(self.store, user_id, product_id)
@@ -60,6 +63,20 @@ class DiscountRadarBridge:
             ],
         }
 
+    def update_reference_price(
+        self,
+        *,
+        user_id: int,
+        product_id: str,
+        reference_price: int,
+    ) -> dict[str, Any]:
+        return actions.update_reference_price_screen(
+            self.store,
+            user_id=user_id,
+            product_id=product_id,
+            reference_price=reference_price,
+        )
+
     @staticmethod
     def parse_price(value: str) -> int | None:
         return actions.parse_price(value)
@@ -72,7 +89,11 @@ class DiscountRadarBridge:
     def inline_keyboard(button_rows: list[list[dict[str, str]]]) -> InlineKeyboardMarkup:
         keyboard = [
             [
-                InlineKeyboardButton(item["text"], callback_data=item["callback_data"])
+                InlineKeyboardButton(
+                    item["text"],
+                    url=item.get("url"),
+                    callback_data=item.get("callback_data"),
+                )
                 for item in row
             ]
             for row in button_rows

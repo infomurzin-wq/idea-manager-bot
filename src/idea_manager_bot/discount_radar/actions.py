@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from idea_manager_bot.discount_radar.formatter import (
     format_check_screen,
     format_home_screen,
+    format_product_detail,
     format_product_list,
     product_button_label,
 )
@@ -45,7 +46,7 @@ def home_screen(store: DiscountRadarStore, user_id: int) -> dict:
 
 def list_screen(store: DiscountRadarStore, user_id: int) -> dict:
     products = store.list_products(user_id)
-    buttons = _product_delete_buttons(products)
+    buttons = _product_open_buttons(products)
     buttons.extend(
         [
             [{"text": "➕ Добавить товар", "callback_data": "discount:add"}],
@@ -64,6 +65,32 @@ def check_screen(store: DiscountRadarStore, user_id: int) -> dict:
             [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
             [{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}],
             [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+        ],
+    }
+
+
+def product_screen(store: DiscountRadarStore, user_id: int, product_id: str) -> dict:
+    product = store.get_product(user_id=user_id, product_id=product_id)
+    if not product:
+        return {
+            "text": "🛒 Дисконт Радар\n\nНе нашёл активный товар.",
+            "buttons": [
+                [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+            ],
+        }
+    return {
+        "text": format_product_detail(product),
+        "buttons": [
+            [{"text": "🔗 Открыть ссылку", "url": product.url}],
+            [
+                {"text": "✏️ Изменить цену", "callback_data": f"discount:edit-price:{product.id}"},
+                {"text": "🗑 Удалить", "callback_data": f"discount:delete:{product.id}"},
+            ],
+            [
+                {"text": "📦 К списку", "callback_data": "discount:list"},
+                {"text": "🏠 Главное меню", "callback_data": "main:home"},
+            ],
         ],
     }
 
@@ -90,12 +117,37 @@ def add_product_from_input(
     )
 
 
-def _product_delete_buttons(products: list[Product]) -> list[list[dict[str, str]]]:
+def update_reference_price_screen(
+    store: DiscountRadarStore,
+    *,
+    user_id: int,
+    product_id: str,
+    reference_price: int,
+) -> dict:
+    product = store.update_reference_price(
+        user_id=user_id,
+        product_id=product_id,
+        reference_price=reference_price,
+    )
+    if not product:
+        return {
+            "text": "🛒 Дисконт Радар\n\nНе нашёл активный товар для изменения цены.",
+            "buttons": [
+                [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+            ],
+        }
+    screen = product_screen(store, user_id, product.id)
+    screen["text"] = f"Последняя известная цена обновлена.\n\n{screen['text']}"
+    return screen
+
+
+def _product_open_buttons(products: list[Product]) -> list[list[dict[str, str]]]:
     return [
         [
             {
-                "text": f"🗑 Удалить: {product_button_label(product)}",
-                "callback_data": f"discount:delete:{product.id}",
+                "text": f"📦 {product_button_label(product)}",
+                "callback_data": f"discount:show:{product.id}",
             }
         ]
         for product in products[:10]
