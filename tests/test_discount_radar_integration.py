@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS, MENU_CANCEL, MENU_DISCOUNT, MENU_PROJECTS
 from idea_manager_bot.config import Settings
 from idea_manager_bot.discount_radar.actions import check_screen, is_ozon_url, parse_price
+from idea_manager_bot.discount_radar.checker import run_scheduled_checks
 from idea_manager_bot.discount_radar.store import DiscountRadarStore
 from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
 
@@ -65,6 +66,23 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertEqual(product.id, products[0].id)
             self.assertEqual(1490, products[0].reference_price)
             self.assertEqual([], store.list_products(200))
+
+    def test_store_lists_active_user_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = DiscountRadarStore(Path(tmp_dir) / "products.json")
+            product = store.add_product(
+                user_id=200,
+                url="https://www.ozon.ru/product/test-2",
+                reference_price=2390,
+            )
+            store.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/test-1",
+                reference_price=1490,
+            )
+            store.delete_product(user_id=200, product_id=product.id)
+
+            self.assertEqual([100], store.list_user_ids())
 
     def test_bridge_adds_and_deletes_product(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -278,6 +296,40 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertIsNone(checked_failed.last_price)
             self.assertIn("капчу", checked_failed.last_error or "")
             self.assertIsNotNone(checked_failed.last_checked_at)
+
+    def test_scheduled_checks_notify_only_users_with_discounts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = DiscountRadarStore(Path(tmp_dir) / "products.json")
+            discounted = store.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/coffee",
+                reference_price=1490,
+            )
+            unchanged = store.add_product(
+                user_id=200,
+                url="https://www.ozon.ru/product/filter",
+                reference_price=2390,
+            )
+            parser = FakeParser(
+                {
+                    discounted.url: FakeSnapshot(
+                        status="success",
+                        title="Кофе в зернах",
+                        price=1400,
+                    ),
+                    unchanged.url: FakeSnapshot(
+                        status="success",
+                        title="Фильтр для воды",
+                        price=2390,
+                    ),
+                }
+            )
+
+            notifications = run_scheduled_checks(store, parser=parser)
+
+            self.assertEqual([100], [item.user_id for item in notifications])
+            self.assertEqual("Кофе в зернах", notifications[0].products[0].title)
+            self.assertEqual(1400, notifications[0].products[0].last_price)
 
     def test_main_menu_contains_discount_radar(self) -> None:
         app = IdeaManagerApp(test_settings())

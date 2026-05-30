@@ -4,6 +4,7 @@ import asyncio
 import atexit
 import logging
 import os
+import sys
 from typing import Any
 from urllib.parse import urlparse
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from telegram import (
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
+    Bot,
     Update,
 )
 from telegram.ext import (
@@ -32,6 +34,9 @@ from idea_manager_bot.bond_portfolio import render_cashflow_screen, render_portf
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.config import Settings, load_settings
 from idea_manager_bot.context_loader import load_project_context
+from idea_manager_bot.discount_radar.checker import run_scheduled_checks
+from idea_manager_bot.discount_radar.formatter import format_discount_notification, format_price
+from idea_manager_bot.discount_radar.store import Product
 from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
 from idea_manager_bot.exporter import SyncExporter
 from idea_manager_bot.link_reader import LinkReader
@@ -1470,8 +1475,47 @@ def build_application(settings: Settings) -> Application:
     return application
 
 
+async def run_discount_cron(settings: Settings) -> None:
+    store = DiscountRadarBridge.from_data_dir(settings.bot_data_dir).store
+    notifications = await asyncio.to_thread(run_scheduled_checks, store)
+    if not notifications:
+        LOGGER.info("Discount Radar cron finished: no price-drop notifications.")
+        return
+
+    bot = Bot(settings.telegram_bot_token)
+    for notification in notifications:
+        await bot.send_message(
+            chat_id=notification.user_id,
+            text=format_discount_notification(notification.products)[:4000],
+            reply_markup=DiscountRadarBridge.inline_keyboard(
+                _discount_notification_buttons(notification.products)
+            ),
+        )
+    LOGGER.info("Discount Radar cron sent %s notifications.", len(notifications))
+
+
+def _discount_notification_buttons(products: list[Product]) -> list[list[dict[str, str]]]:
+    buttons: list[list[dict[str, str]]] = []
+    for product in products[:5]:
+        discount = product.reference_price - (product.last_price or 0)
+        title = product.title or product.url.replace("https://", "").replace("http://", "")
+        buttons.append(
+            [
+                {
+                    "text": f"🛒 Открыть: {title[:30]} (-{format_price(discount)})",
+                    "url": product.url,
+                }
+            ]
+        )
+    return buttons
+
+
 def main() -> None:
     settings = load_settings()
+    if len(sys.argv) > 1 and sys.argv[1] == "discount-cron":
+        asyncio.run(run_discount_cron(settings))
+        return
+
     for project in build_project_registry(settings.workspace_root).values():
         project.inbox_dir.mkdir(parents=True, exist_ok=True)
         project.context_dir.mkdir(parents=True, exist_ok=True)
@@ -1503,3 +1547,7 @@ def main() -> None:
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     finally:
         _cleanup_lock()
+
+
+if __name__ == "__main__":
+    main()

@@ -37,6 +37,15 @@ class DiscountRadarStore:
             if product.user_id == user_id and product.is_active
         ]
 
+    def list_user_ids(self) -> list[int]:
+        return sorted(
+            {
+                product.user_id
+                for product in self._load()
+                if product.is_active
+            }
+        )
+
     def get_product(self, *, user_id: int, product_id: str) -> Product | None:
         for product in self._load():
             if product.user_id == user_id and product.id == product_id and product.is_active:

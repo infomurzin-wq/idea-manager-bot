@@ -94,6 +94,21 @@ def format_check_screen(products: list[Product]) -> str:
     return "\n".join(lines)
 
 
+def format_discount_notification(products: list[Product]) -> str:
+    lines = ["🛒 Дисконт Радар", "", "Сигнал на покупку:"]
+    for product in discounted_products(products):
+        title = product.title or "Без названия"
+        discount = product.reference_price - (product.last_price or 0)
+        lines.append(
+            f"- {title}\n"
+            f"  было: {format_price(product.reference_price)}\n"
+            f"  стало: {format_price(product.last_price)}\n"
+            f"  снижение: {format_price(discount)}\n"
+            f"  ссылка: {product.url}"
+        )
+    return "\n".join(lines)
+
+
 def discounted_products(products: list[Product]) -> list[Product]:
     return [
         product

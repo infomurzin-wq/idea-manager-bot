@@ -66,6 +66,32 @@ idea-manager-bot
 python -m idea_manager_bot.bot
 ```
 
+## Discount Radar scheduled check
+
+Для автоматической проверки скидок используй отдельный Railway scheduled service/job с командой:
+
+```bash
+idea-manager-bot discount-cron
+```
+
+Рекомендуемый режим: один запуск в день.
+
+Этот entrypoint:
+
+- не запускает Telegram polling;
+- читает товары из `$BOT_DATA_DIR/discount-radar/products.json`;
+- проверяет цены через best-effort Ozon parser;
+- отправляет Telegram-сообщение только если цена стала ниже `reference_price`;
+- молчит, если скидок нет.
+
+Нужны те же env vars и тот же Railway Volume, что у основного бота:
+
+- `TELEGRAM_BOT_TOKEN`
+- `BOT_DATA_DIR=/app/data`
+- подключённый volume к `/app/data`
+
+Важно: scheduled job должен видеть тот же `BOT_DATA_DIR`, где основной бот хранит товары.
+
 ## Локальная сторона
 
 На Mac должен быть клон sync-репозитория, например:

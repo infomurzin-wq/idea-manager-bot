@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Protocol
 from urllib.parse import urlparse
 
+from idea_manager_bot.discount_radar.checker import ProductParser, run_price_checks
 from idea_manager_bot.discount_radar.formatter import (
     discounted_products,
     format_check_screen,
@@ -13,20 +13,6 @@ from idea_manager_bot.discount_radar.formatter import (
     product_button_label,
 )
 from idea_manager_bot.discount_radar.store import DiscountRadarStore, Product
-
-
-class ProductSnapshot(Protocol):
-    status: str
-    title: str | None
-    price: int | None
-    error: str | None
-
-    @property
-    def ok(self) -> bool: ...
-
-
-class ProductParser(Protocol):
-    def fetch(self, url: str) -> ProductSnapshot: ...
 
 
 def is_ozon_url(value: str) -> bool:
@@ -79,33 +65,7 @@ def check_screen(
     user_id: int,
     parser: ProductParser | None = None,
 ) -> dict:
-    if parser is None:
-        from idea_manager_bot.discount_radar.parser_ozon import OzonParser
-
-        parser = OzonParser()
-
-    products = store.list_products(user_id)
-    checked_products: list[Product] = []
-    for product in products:
-        snapshot = parser.fetch(product.url)
-        if snapshot.ok:
-            updated = store.update_check_result(
-                user_id=user_id,
-                product_id=product.id,
-                price=snapshot.price,
-                error=None,
-                title=snapshot.title,
-            )
-        else:
-            updated = store.update_check_result(
-                user_id=user_id,
-                product_id=product.id,
-                price=None,
-                error=snapshot.error or snapshot.status,
-                title=snapshot.title,
-            )
-        checked_products.append(updated or product)
-
+    checked_products = run_price_checks(store, user_id=user_id, parser=parser)
     return {
         "text": format_check_screen(checked_products),
         "buttons": [
