@@ -18,7 +18,7 @@ from idea_manager_bot.bot import (
 )
 from idea_manager_bot.config import Settings
 from idea_manager_bot.discount_radar.actions import check_screen, is_ozon_url, parse_price
-from idea_manager_bot.discount_radar.checker import run_scheduled_checks
+from idea_manager_bot.discount_radar.checker import run_scheduled_check_report, run_scheduled_checks
 from idea_manager_bot.discount_radar.store import DiscountRadarStore
 from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
 
@@ -366,6 +366,52 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertEqual([100], [item.user_id for item in notifications])
             self.assertEqual("Кофе в зернах", notifications[0].products[0].title)
             self.assertEqual(1400, notifications[0].products[0].last_price)
+
+    def test_scheduled_check_report_counts_users_products_discounts_and_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = DiscountRadarStore(Path(tmp_dir) / "products.json")
+            discounted = store.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/coffee",
+                reference_price=1490,
+            )
+            unchanged = store.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/filter",
+                reference_price=2390,
+            )
+            failed = store.add_product(
+                user_id=200,
+                url="https://www.ozon.ru/product/cup",
+                reference_price=790,
+            )
+            parser = FakeParser(
+                {
+                    discounted.url: FakeSnapshot(
+                        status="success",
+                        title="Кофе в зернах",
+                        price=1400,
+                    ),
+                    unchanged.url: FakeSnapshot(
+                        status="success",
+                        title="Фильтр для воды",
+                        price=2390,
+                    ),
+                    failed.url: FakeSnapshot(
+                        status="blocked",
+                        title="Кружка",
+                        error="Ozon запросил капчу",
+                    ),
+                }
+            )
+
+            report = run_scheduled_check_report(store, parser=parser)
+
+            self.assertEqual(2, report.users_checked)
+            self.assertEqual(3, report.products_checked)
+            self.assertEqual(1, report.discounted_products)
+            self.assertEqual(1, report.products_with_errors)
+            self.assertEqual([100], [item.user_id for item in report.notifications])
 
     def test_discount_cron_dry_run_can_be_enabled_by_arg_or_env(self) -> None:
         self.assertTrue(

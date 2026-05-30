@@ -34,7 +34,7 @@ from idea_manager_bot.bond_portfolio import render_cashflow_screen, render_portf
 from idea_manager_bot.bond_radar_bridge import BondRadarBridge
 from idea_manager_bot.config import Settings, load_settings
 from idea_manager_bot.context_loader import load_project_context
-from idea_manager_bot.discount_radar.checker import run_scheduled_checks
+from idea_manager_bot.discount_radar.checker import run_scheduled_check_report
 from idea_manager_bot.discount_radar.formatter import format_discount_notification, format_price
 from idea_manager_bot.discount_radar.store import Product
 from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
@@ -1483,17 +1483,24 @@ def _discount_cron_dry_run_enabled(argv: list[str] | None = None) -> bool:
 
 async def run_discount_cron(settings: Settings, *, dry_run: bool = False) -> None:
     store = DiscountRadarBridge.from_data_dir(settings.bot_data_dir).store
-    notifications = await asyncio.to_thread(run_scheduled_checks, store)
+    report = await asyncio.to_thread(run_scheduled_check_report, store)
+    notifications = report.notifications
+    LOGGER.info(
+        "Discount Radar cron checked %s users, %s products, %s discounted products, %s errors.",
+        report.users_checked,
+        report.products_checked,
+        report.discounted_products,
+        report.products_with_errors,
+    )
     if not notifications:
         LOGGER.info("Discount Radar cron finished: no price-drop notifications.")
         return
 
     if dry_run:
-        product_count = sum(len(notification.products) for notification in notifications)
         LOGGER.info(
             "Discount Radar cron dry-run finished: %s users, %s discounted products, no Telegram messages sent.",
             len(notifications),
-            product_count,
+            report.discounted_products,
         )
         return
 

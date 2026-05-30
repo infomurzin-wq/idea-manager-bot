@@ -93,7 +93,8 @@ deploy/railway-discount-cron.toml
 - читает товары из `$BOT_DATA_DIR/discount-radar/products.json`;
 - проверяет цены через best-effort Ozon parser;
 - отправляет Telegram-сообщение только если цена стала ниже `reference_price`;
-- молчит, если скидок нет.
+- молчит для пользователя, если скидок нет;
+- пишет в Railway logs диагностическую строку с количеством проверенных users/products, найденных скидок и ошибок.
 
 Нужны те же env vars и тот же Railway Volume, что у основного бота:
 
@@ -110,6 +111,12 @@ DISCOUNT_CRON_DRY_RUN=1
 ```
 
 В dry-run режиме cron выполнит проверку и запишет результат в Railway logs, но не отправит Telegram-сообщения. После успешной проверки удали эту переменную, чтобы включить реальные уведомления.
+
+В логах должна появиться строка такого вида:
+
+```text
+Discount Radar cron checked 1 users, 3 products, 0 discounted products, 1 errors.
+```
 
 При настройке в Railway:
 
