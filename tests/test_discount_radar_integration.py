@@ -4,10 +4,18 @@ import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 from telegram import InlineKeyboardButton
 
-from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS, MENU_CANCEL, MENU_DISCOUNT, MENU_PROJECTS
+from idea_manager_bot.bot import (
+    IdeaManagerApp,
+    MENU_BONDS,
+    MENU_CANCEL,
+    MENU_DISCOUNT,
+    MENU_PROJECTS,
+    _discount_cron_dry_run_enabled,
+)
 from idea_manager_bot.config import Settings
 from idea_manager_bot.discount_radar.actions import check_screen, is_ozon_url, parse_price
 from idea_manager_bot.discount_radar.checker import run_scheduled_checks
@@ -358,6 +366,15 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertEqual([100], [item.user_id for item in notifications])
             self.assertEqual("Кофе в зернах", notifications[0].products[0].title)
             self.assertEqual(1400, notifications[0].products[0].last_price)
+
+    def test_discount_cron_dry_run_can_be_enabled_by_arg_or_env(self) -> None:
+        self.assertTrue(
+            _discount_cron_dry_run_enabled(["idea-manager-bot", "discount-cron", "--dry-run"])
+        )
+        self.assertFalse(_discount_cron_dry_run_enabled(["idea-manager-bot", "discount-cron"]))
+
+        with patch.dict("os.environ", {"DISCOUNT_CRON_DRY_RUN": "1"}):
+            self.assertTrue(_discount_cron_dry_run_enabled(["idea-manager-bot", "discount-cron"]))
 
     def test_main_menu_contains_discount_radar(self) -> None:
         app = IdeaManagerApp(test_settings())

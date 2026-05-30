@@ -1475,11 +1475,26 @@ def build_application(settings: Settings) -> Application:
     return application
 
 
-async def run_discount_cron(settings: Settings) -> None:
+def _discount_cron_dry_run_enabled(argv: list[str] | None = None) -> bool:
+    argv = argv if argv is not None else sys.argv
+    env_value = os.getenv("DISCOUNT_CRON_DRY_RUN", "").strip().lower()
+    return "--dry-run" in argv[2:] or env_value in {"1", "true", "yes", "on"}
+
+
+async def run_discount_cron(settings: Settings, *, dry_run: bool = False) -> None:
     store = DiscountRadarBridge.from_data_dir(settings.bot_data_dir).store
     notifications = await asyncio.to_thread(run_scheduled_checks, store)
     if not notifications:
         LOGGER.info("Discount Radar cron finished: no price-drop notifications.")
+        return
+
+    if dry_run:
+        product_count = sum(len(notification.products) for notification in notifications)
+        LOGGER.info(
+            "Discount Radar cron dry-run finished: %s users, %s discounted products, no Telegram messages sent.",
+            len(notifications),
+            product_count,
+        )
         return
 
     bot = Bot(settings.telegram_bot_token)
@@ -1513,7 +1528,7 @@ def _discount_notification_buttons(products: list[Product]) -> list[list[dict[st
 def main() -> None:
     settings = load_settings()
     if len(sys.argv) > 1 and sys.argv[1] == "discount-cron":
-        asyncio.run(run_discount_cron(settings))
+        asyncio.run(run_discount_cron(settings, dry_run=_discount_cron_dry_run_enabled()))
         return
 
     for project in build_project_registry(settings.workspace_root).values():

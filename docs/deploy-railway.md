@@ -103,13 +103,24 @@ deploy/railway-discount-cron.toml
 
 Важно: scheduled job должен видеть тот же `BOT_DATA_DIR`, где основной бот хранит товары.
 
+Для первой проверки можно временно добавить env var:
+
+```text
+DISCOUNT_CRON_DRY_RUN=1
+```
+
+В dry-run режиме cron выполнит проверку и запишет результат в Railway logs, но не отправит Telegram-сообщения. После успешной проверки удали эту переменную, чтобы включить реальные уведомления.
+
 При настройке в Railway:
 
 1. Создай отдельный service из того же GitHub repo.
 2. Укажи config file path: `deploy/railway-discount-cron.toml`.
 3. Подключи тот же volume к `/app/data`.
 4. Добавь `TELEGRAM_BOT_TOKEN` и `BOT_DATA_DIR=/app/data`.
-5. Оставь основной bot service без изменений, он продолжает запускаться обычной командой `idea-manager-bot`.
+5. Для первого запуска временно добавь `DISCOUNT_CRON_DRY_RUN=1`.
+6. Проверь Railway logs: процесс должен завершиться, а не остаться `Active`.
+7. Удали `DISCOUNT_CRON_DRY_RUN`, чтобы включить реальные уведомления.
+8. Оставь основной bot service без изменений, он продолжает запускаться обычной командой `idea-manager-bot`.
 
 ## Локальная сторона
 
