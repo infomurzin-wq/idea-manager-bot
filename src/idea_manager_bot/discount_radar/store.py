@@ -156,17 +156,18 @@ class DiscountRadarStore:
         product_id: str,
         price: int | None,
         error: str | None,
+        title: str | None = None,
     ) -> Product | None:
         products = self._load()
         now = utc_now_iso()
         for index, product in enumerate(products):
-            if product.user_id == user_id and product.id == product_id:
+            if product.user_id == user_id and product.id == product_id and product.is_active:
                 updated = Product(
                     id=product.id,
                     user_id=product.user_id,
                     url=product.url,
                     reference_price=product.reference_price,
-                    title=product.title,
+                    title=title or product.title,
                     last_price=price if price is not None else product.last_price,
                     last_checked_at=now,
                     last_error=error,

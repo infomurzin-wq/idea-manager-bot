@@ -15,8 +15,7 @@ def format_home_screen(products: list[Product]) -> str:
         "🛒 Дисконт Радар\n\n"
         "Отслеживаем товары и последнюю известную цену.\n"
         f"Активных товаров: {active_count}\n\n"
-        "На первом этапе проверка Ozon ещё не подключена: "
-        "сейчас собираем удобный список и сценарий добавления."
+        "Нажми «Проверить цены», чтобы вручную обновить цены по сохранённым ссылкам."
     )
 
 
@@ -55,18 +54,26 @@ def format_check_screen(products: list[Product]) -> str:
     if not products:
         return "🛒 Дисконт Радар\n\nСписок пуст. Сначала добавь товар."
 
-    lines = ["🛒 Дисконт Радар\n", "🔎 Проверка цен:"]
+    lines = ["🛒 Дисконт Радар\n", "🔎 Проверка цен завершена:"]
     for product in products:
         title = product.title or "Без названия"
-        if product.last_price is None:
+        if product.last_error:
+            status = f"ошибка: {product.last_error}"
+        elif product.last_price is None:
             status = "новая цена пока неизвестна"
         elif product.last_price < product.reference_price:
-            status = "подешевел"
+            discount = product.reference_price - product.last_price
+            status = (
+                f"подешевел на {format_price(discount)} "
+                f"({format_price(product.reference_price)} → {format_price(product.last_price)})"
+            )
         else:
-            status = "не дешевле последней цены"
+            status = (
+                f"не дешевле последней цены "
+                f"({format_price(product.reference_price)} → {format_price(product.last_price)})"
+            )
         lines.append(f"- {title}: {status}")
 
-    lines.append("\nРеальную проверку Ozon подключим отдельным этапом.")
     return "\n".join(lines)
 
 

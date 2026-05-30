@@ -5,11 +5,10 @@ import re
 from dataclasses import dataclass
 from html import unescape
 from typing import Any
+from urllib.parse import urlparse
 
 import certifi
 import httpx
-
-from idea_manager_bot.discount_radar.actions import is_ozon_url
 
 USER_AGENT = "Mozilla/5.0 (compatible; IdeaManagerBot/0.1; +https://example.local)"
 MAX_PRICE_RUB = 10_000_000
@@ -33,7 +32,7 @@ class OzonParser:
         self.timeout = timeout
 
     def fetch(self, url: str) -> OzonProductSnapshot:
-        if not is_ozon_url(url):
+        if not _is_ozon_url(url):
             return OzonProductSnapshot(
                 url=url,
                 status="invalid_url",
@@ -75,6 +74,14 @@ class OzonParser:
             )
 
         return parse_ozon_html(response.text, url=str(response.url))
+
+
+def _is_ozon_url(value: str) -> bool:
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    hostname = parsed.hostname or ""
+    return hostname == "ozon.ru" or hostname.endswith(".ozon.ru")
 
 
 def parse_ozon_html(html: str, *, url: str) -> OzonProductSnapshot:

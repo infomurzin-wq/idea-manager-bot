@@ -2,15 +2,36 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 
 from telegram import InlineKeyboardButton
 
 from idea_manager_bot.bot import IdeaManagerApp, MENU_BONDS, MENU_CANCEL, MENU_DISCOUNT, MENU_PROJECTS
 from idea_manager_bot.config import Settings
-from idea_manager_bot.discount_radar.actions import is_ozon_url, parse_price
+from idea_manager_bot.discount_radar.actions import check_screen, is_ozon_url, parse_price
 from idea_manager_bot.discount_radar.store import DiscountRadarStore
 from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
+
+
+@dataclass(frozen=True)
+class FakeSnapshot:
+    status: str
+    title: str | None = None
+    price: int | None = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "success"
+
+
+class FakeParser:
+    def __init__(self, snapshots: dict[str, FakeSnapshot]) -> None:
+        self.snapshots = snapshots
+
+    def fetch(self, url: str) -> FakeSnapshot:
+        return self.snapshots[url]
 
 
 class DiscountRadarIntegrationTest(unittest.TestCase):
@@ -148,6 +169,51 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertEqual(1390, updated.reference_price)
             self.assertIn("Последняя известная цена обновлена", screen["text"])
             self.assertIn("Последняя известная цена: 1 390 ₽", screen["text"])
+
+    def test_check_screen_fetches_prices_and_updates_products(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = DiscountRadarStore(Path(tmp_dir) / "products.json")
+            cheaper = store.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/coffee",
+                reference_price=1490,
+            )
+            failed = store.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/filter",
+                reference_price=2390,
+            )
+            parser = FakeParser(
+                {
+                    cheaper.url: FakeSnapshot(
+                        status="success",
+                        title="Кофе в зернах",
+                        price=1400,
+                    ),
+                    failed.url: FakeSnapshot(
+                        status="blocked",
+                        title="Фильтр для воды",
+                        error="Ozon отдал страницу проверки доступа или капчу.",
+                    ),
+                }
+            )
+
+            screen = check_screen(store, user_id=100, parser=parser)
+            products = store.list_products(100)
+            checked_cheaper = next(product for product in products if product.id == cheaper.id)
+            checked_failed = next(product for product in products if product.id == failed.id)
+
+            self.assertIn("Проверка цен завершена", screen["text"])
+            self.assertIn("Кофе в зернах: подешевел на 90 ₽", screen["text"])
+            self.assertIn("Фильтр для воды: ошибка", screen["text"])
+            self.assertEqual("Кофе в зернах", checked_cheaper.title)
+            self.assertEqual(1400, checked_cheaper.last_price)
+            self.assertIsNone(checked_cheaper.last_error)
+            self.assertIsNotNone(checked_cheaper.last_checked_at)
+            self.assertEqual("Фильтр для воды", checked_failed.title)
+            self.assertIsNone(checked_failed.last_price)
+            self.assertIn("капчу", checked_failed.last_error or "")
+            self.assertIsNotNone(checked_failed.last_checked_at)
 
     def test_main_menu_contains_discount_radar(self) -> None:
         app = IdeaManagerApp(test_settings())
