@@ -40,7 +40,10 @@ class DiscountRadarBridge:
             return actions.delete_product_screen(self.store, user_id, product_id)
         return {
             "text": "🛒 Дисконт Радар\n\nНеизвестное действие.",
-            "buttons": [[{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}]],
+            "buttons": [
+                [{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+            ],
         }
 
     def add_product(self, *, user_id: int, url: str, reference_price: int) -> dict[str, Any]:

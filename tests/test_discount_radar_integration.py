@@ -51,6 +51,34 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertIn("discount:add", callbacks)
             self.assertIn("discount:list", callbacks)
             self.assertIn("discount:check", callbacks)
+            self.assertIn("main:home", callbacks)
+
+    def test_discount_radar_core_screens_have_main_menu_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bridge = DiscountRadarBridge(Path(tmp_dir) / "discount-radar" / "products.json")
+            bridge.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/test",
+                reference_price=1490,
+            )
+            product = bridge.store.list_products(100)[0]
+
+            screens = [
+                bridge.handle_action("discount:home", user_id=100),
+                bridge.handle_action("discount:list", user_id=100),
+                bridge.handle_action("discount:check", user_id=100),
+                bridge.handle_action(f"discount:show:{product.id}", user_id=100),
+                bridge.handle_action("discount:unknown", user_id=100),
+            ]
+
+            for screen in screens:
+                callbacks = [
+                    item.get("callback_data")
+                    for row in screen["buttons"]
+                    for item in row
+                    if item.get("callback_data")
+                ]
+                self.assertIn("main:home", callbacks)
 
     def test_store_adds_and_lists_user_products(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
