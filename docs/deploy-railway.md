@@ -74,7 +74,18 @@ python -m idea_manager_bot.bot
 idea-manager-bot discount-cron
 ```
 
-Рекомендуемый режим: один запуск в день.
+В репозитории есть отдельный config-as-code файл для этого сервиса:
+
+```text
+deploy/railway-discount-cron.toml
+```
+
+Он задаёт:
+
+- запуск через тот же `Dockerfile`;
+- команду `idea-manager-bot discount-cron`;
+- расписание `0 7 * * *`, то есть один запуск в день в 07:00 UTC / 10:00 по Москве;
+- `restartPolicyType = NEVER`, чтобы cron-задача не перезапускалась как постоянный бот.
 
 Этот entrypoint:
 
@@ -91,6 +102,14 @@ idea-manager-bot discount-cron
 - подключённый volume к `/app/data`
 
 Важно: scheduled job должен видеть тот же `BOT_DATA_DIR`, где основной бот хранит товары.
+
+При настройке в Railway:
+
+1. Создай отдельный service из того же GitHub repo.
+2. Укажи config file path: `deploy/railway-discount-cron.toml`.
+3. Подключи тот же volume к `/app/data`.
+4. Добавь `TELEGRAM_BOT_TOKEN` и `BOT_DATA_DIR=/app/data`.
+5. Оставь основной bot service без изменений, он продолжает запускаться обычной командой `idea-manager-bot`.
 
 ## Локальная сторона
 

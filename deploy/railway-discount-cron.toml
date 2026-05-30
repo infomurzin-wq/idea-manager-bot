@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "idea-manager-bot discount-cron"
+cronSchedule = "0 7 * * *"
+restartPolicyType = "NEVER"
