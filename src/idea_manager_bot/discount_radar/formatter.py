@@ -55,6 +55,23 @@ def format_check_screen(products: list[Product]) -> str:
         return "🛒 Дисконт Радар\n\nСписок пуст. Сначала добавь товар."
 
     lines = ["🛒 Дисконт Радар\n", "🔎 Проверка цен завершена:"]
+    discounted = discounted_products(products)
+    if discounted:
+        lines.append("\nСигнал на покупку:")
+        for product in discounted:
+            title = product.title or "Без названия"
+            discount = product.reference_price - (product.last_price or 0)
+            lines.append(
+                f"- {title}\n"
+                f"  было: {format_price(product.reference_price)}\n"
+                f"  стало: {format_price(product.last_price)}\n"
+                f"  снижение: {format_price(discount)}\n"
+                f"  ссылка: {product.url}"
+            )
+    else:
+        lines.append("\nСигналов на покупку нет.")
+
+    lines.append("\nИтоги проверки:")
     for product in products:
         title = product.title or "Без названия"
         if product.last_error:
@@ -75,6 +92,16 @@ def format_check_screen(products: list[Product]) -> str:
         lines.append(f"- {title}: {status}")
 
     return "\n".join(lines)
+
+
+def discounted_products(products: list[Product]) -> list[Product]:
+    return [
+        product
+        for product in products
+        if not product.last_error
+        and product.last_price is not None
+        and product.last_price < product.reference_price
+    ]
 
 
 def product_button_label(product: Product) -> str:

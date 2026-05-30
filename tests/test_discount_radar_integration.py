@@ -204,8 +204,19 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             checked_failed = next(product for product in products if product.id == failed.id)
 
             self.assertIn("Проверка цен завершена", screen["text"])
+            self.assertIn("Сигнал на покупку", screen["text"])
+            self.assertIn("было: 1 490 ₽", screen["text"])
+            self.assertIn("стало: 1 400 ₽", screen["text"])
+            self.assertIn("снижение: 90 ₽", screen["text"])
             self.assertIn("Кофе в зернах: подешевел на 90 ₽", screen["text"])
             self.assertIn("Фильтр для воды: ошибка", screen["text"])
+            urls = [
+                item.get("url")
+                for row in screen["buttons"]
+                for item in row
+                if item.get("url")
+            ]
+            self.assertEqual(["https://www.ozon.ru/product/coffee"], urls)
             self.assertEqual("Кофе в зернах", checked_cheaper.title)
             self.assertEqual(1400, checked_cheaper.last_price)
             self.assertIsNone(checked_cheaper.last_error)

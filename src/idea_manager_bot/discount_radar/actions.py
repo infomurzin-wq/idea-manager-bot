@@ -4,10 +4,12 @@ from typing import Protocol
 from urllib.parse import urlparse
 
 from idea_manager_bot.discount_radar.formatter import (
+    discounted_products,
     format_check_screen,
     format_home_screen,
     format_product_detail,
     format_product_list,
+    format_price,
     product_button_label,
 )
 from idea_manager_bot.discount_radar.store import DiscountRadarStore, Product
@@ -107,6 +109,7 @@ def check_screen(
     return {
         "text": format_check_screen(checked_products),
         "buttons": [
+            *_discount_alert_buttons(checked_products),
             [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
             [{"text": "🛒 К Дисконт Радар", "callback_data": "discount:home"}],
             [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
@@ -197,3 +200,19 @@ def _product_open_buttons(products: list[Product]) -> list[list[dict[str, str]]]
         ]
         for product in products[:10]
     ]
+
+
+def _discount_alert_buttons(products: list[Product]) -> list[list[dict[str, str]]]:
+    buttons: list[list[dict[str, str]]] = []
+    for product in discounted_products(products)[:5]:
+        discount = product.reference_price - (product.last_price or 0)
+        label = product_button_label(product)[:30]
+        buttons.append(
+            [
+                {
+                    "text": f"🛒 Открыть: {label} (-{format_price(discount)})",
+                    "url": product.url,
+                }
+            ]
+        )
+    return buttons
