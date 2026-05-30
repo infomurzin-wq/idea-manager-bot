@@ -127,10 +127,20 @@ def product_screen(store: DiscountRadarStore, user_id: int, product_id: str) -> 
                 [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
             ],
         }
-    return {
-        "text": format_product_detail(product),
-        "buttons": [
-            [{"text": "🔗 Открыть ссылку", "url": product.url}],
+    buttons = [
+        [{"text": "🔗 Открыть ссылку", "url": product.url}],
+    ]
+    if _can_accept_last_price(product):
+        buttons.append(
+            [
+                {
+                    "text": "✅ Обновить последнюю цену",
+                    "callback_data": f"discount:accept-price:{product.id}",
+                }
+            ]
+        )
+    buttons.extend(
+        [
             [
                 {"text": "✏️ Изменить цену", "callback_data": f"discount:edit-price:{product.id}"},
                 {"text": "🗑 Удалить", "callback_data": f"discount:delete:{product.id}"},
@@ -139,7 +149,11 @@ def product_screen(store: DiscountRadarStore, user_id: int, product_id: str) -> 
                 {"text": "📦 К списку", "callback_data": "discount:list"},
                 {"text": "🏠 Главное меню", "callback_data": "main:home"},
             ],
-        ],
+        ]
+    )
+    return {
+        "text": format_product_detail(product),
+        "buttons": buttons,
     }
 
 
@@ -190,6 +204,50 @@ def update_reference_price_screen(
     return screen
 
 
+def accept_last_price_screen(
+    store: DiscountRadarStore,
+    *,
+    user_id: int,
+    product_id: str,
+) -> dict:
+    product = store.get_product(user_id=user_id, product_id=product_id)
+    if not product:
+        return {
+            "text": "🛒 Дисконт Радар\n\nНе нашёл активный товар для обновления цены.",
+            "buttons": [
+                [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+            ],
+        }
+    if not _can_accept_last_price(product):
+        screen = product_screen(store, user_id, product.id)
+        screen["text"] = (
+            "Нечего обновлять: сначала нужна успешная проверка с новой найденной ценой.\n\n"
+            f"{screen['text']}"
+        )
+        return screen
+
+    updated = store.update_reference_price(
+        user_id=user_id,
+        product_id=product.id,
+        reference_price=product.last_price or product.reference_price,
+    )
+    if not updated:
+        return {
+            "text": "🛒 Дисконт Радар\n\nНе удалось обновить последнюю известную цену.",
+            "buttons": [
+                [{"text": "📦 Мои товары", "callback_data": "discount:list"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+            ],
+        }
+    screen = product_screen(store, user_id, updated.id)
+    screen["text"] = (
+        f"Последняя известная цена обновлена до {format_price(updated.reference_price)}.\n\n"
+        f"{screen['text']}"
+    )
+    return screen
+
+
 def _product_open_buttons(products: list[Product]) -> list[list[dict[str, str]]]:
     return [
         [
@@ -216,3 +274,11 @@ def _discount_alert_buttons(products: list[Product]) -> list[list[dict[str, str]
             ]
         )
     return buttons
+
+
+def _can_accept_last_price(product: Product) -> bool:
+    return (
+        product.last_error is None
+        and product.last_price is not None
+        and product.last_price != product.reference_price
+    )

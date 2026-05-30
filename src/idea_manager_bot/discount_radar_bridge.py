@@ -32,6 +32,9 @@ class DiscountRadarBridge:
         if action.startswith("discount:show:"):
             product_id = action.removeprefix("discount:show:")
             return actions.product_screen(self.store, user_id, product_id)
+        if action.startswith("discount:accept-price:"):
+            product_id = action.removeprefix("discount:accept-price:")
+            return actions.accept_last_price_screen(self.store, user_id=user_id, product_id=product_id)
         if action.startswith("discount:delete:"):
             product_id = action.removeprefix("discount:delete:")
             return actions.delete_product_screen(self.store, user_id, product_id)

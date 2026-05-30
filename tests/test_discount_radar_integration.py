@@ -170,6 +170,59 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
             self.assertIn("Последняя известная цена обновлена", screen["text"])
             self.assertIn("Последняя известная цена: 1 390 ₽", screen["text"])
 
+    def test_product_card_accepts_last_checked_price_as_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bridge = DiscountRadarBridge(Path(tmp_dir) / "products.json")
+            bridge.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/test",
+                reference_price=1490,
+            )
+            product = bridge.store.list_products(100)[0]
+            bridge.store.update_check_result(
+                user_id=100,
+                product_id=product.id,
+                price=1400,
+                error=None,
+                title="Кофе в зернах",
+            )
+
+            card = bridge.handle_action(f"discount:show:{product.id}", user_id=100)
+            callbacks = [
+                item.get("callback_data")
+                for row in card["buttons"]
+                for item in row
+                if item.get("callback_data")
+            ]
+            screen = bridge.handle_action(f"discount:accept-price:{product.id}", user_id=100)
+            updated = bridge.store.list_products(100)[0]
+
+            self.assertIn(f"discount:accept-price:{product.id}", callbacks)
+            self.assertEqual(1400, updated.reference_price)
+            self.assertEqual(1400, updated.last_price)
+            self.assertIn("Последняя известная цена обновлена до 1 400 ₽", screen["text"])
+            self.assertIn("Последняя известная цена: 1 400 ₽", screen["text"])
+
+    def test_product_card_does_not_offer_accept_price_without_successful_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bridge = DiscountRadarBridge(Path(tmp_dir) / "products.json")
+            bridge.add_product(
+                user_id=100,
+                url="https://www.ozon.ru/product/test",
+                reference_price=1490,
+            )
+            product = bridge.store.list_products(100)[0]
+
+            screen = bridge.handle_action(f"discount:show:{product.id}", user_id=100)
+            callbacks = [
+                item.get("callback_data")
+                for row in screen["buttons"]
+                for item in row
+                if item.get("callback_data")
+            ]
+
+            self.assertNotIn(f"discount:accept-price:{product.id}", callbacks)
+
     def test_check_screen_fetches_prices_and_updates_products(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             store = DiscountRadarStore(Path(tmp_dir) / "products.json")
