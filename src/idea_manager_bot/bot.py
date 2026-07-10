@@ -374,7 +374,10 @@ class IdeaManagerApp:
 
         if data == "ufc:run-full":
             await query.message.reply_text("🥊 Запускаю полный UFC-отчёт. Это может занять несколько минут.")
-            screen = await asyncio.to_thread(self.ufc_reports.run_full_report)
+            screen = await asyncio.to_thread(
+                self.ufc_reports.run_full_report,
+                query.message.chat_id,
+            )
             await query.message.reply_text(
                 screen["text"][:4000],
                 reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
@@ -383,7 +386,10 @@ class IdeaManagerApp:
 
         if data == "ufc:run-changes":
             await query.message.reply_text("🥊 Проверяю UFC-изменения. Это может занять несколько минут.")
-            screen = await asyncio.to_thread(self.ufc_reports.run_incremental_check)
+            screen = await asyncio.to_thread(
+                self.ufc_reports.run_incremental_check,
+                query.message.chat_id,
+            )
             await query.message.reply_text(
                 screen["text"][:4000],
                 reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
@@ -393,7 +399,11 @@ class IdeaManagerApp:
         if data.startswith("ufc:send:"):
             slug = data.removeprefix("ufc:send:")
             await query.message.reply_text("🥊 Отправляю выбранный UFC-отчёт файлом.")
-            screen = await asyncio.to_thread(self.ufc_reports.send_existing_report, slug)
+            screen = await asyncio.to_thread(
+                self.ufc_reports.send_existing_report,
+                slug,
+                query.message.chat_id,
+            )
             await query.message.reply_text(
                 screen["text"][:4000],
                 reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),

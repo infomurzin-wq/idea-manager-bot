@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
@@ -34,9 +35,10 @@ class UfcReportsBridge:
             return self._show_report_screen(action.removeprefix("ufc:show:"))
         return self._home_screen()
 
-    def run_full_report(self) -> dict[str, Any]:
+    def run_full_report(self, chat_id: int | str | None = None) -> dict[str, Any]:
         try:
-            result = self._run_monitoring_cycle(mode="baseline", send="telegram")
+            with self._telegram_chat_target(chat_id):
+                result = self._run_monitoring_cycle(mode="baseline", send="telegram")
         except Exception as exc:  # noqa: BLE001
             return self._error_screen("Не удалось запустить полный UFC-отчёт.", exc)
         return self._result_screen(
@@ -46,14 +48,16 @@ class UfcReportsBridge:
             unchanged_text="Полный отчёт не был отправлен.",
         )
 
-    def run_incremental_check(self) -> dict[str, Any]:
+    def run_incremental_check(self, chat_id: int | str | None = None) -> dict[str, Any]:
         try:
-            result = self._run_monitoring_cycle(mode="incremental", send="telegram")
+            with self._telegram_chat_target(chat_id):
+                result = self._run_monitoring_cycle(mode="incremental", send="telegram")
             if (
                 result.status == "skipped"
                 and result.reason == "No active weekend monitoring window is open."
             ):
-                baseline_result = self._run_monitoring_cycle(mode="baseline", send="telegram")
+                with self._telegram_chat_target(chat_id):
+                    baseline_result = self._run_monitoring_cycle(mode="baseline", send="telegram")
                 return self._result_screen(
                     title="🥊 Проверка изменений UFC",
                     result=baseline_result,
@@ -72,7 +76,7 @@ class UfcReportsBridge:
             unchanged_text="Изменений относительно последней отправленной версии нет.",
         )
 
-    def send_existing_report(self, slug: str) -> dict[str, Any]:
+    def send_existing_report(self, slug: str, chat_id: int | str | None = None) -> dict[str, Any]:
         try:
             self._ensure_ufc_reporter_path()
             from ufc_reporter.rendering import render_report
@@ -87,11 +91,12 @@ class UfcReportsBridge:
                     render_report(report),
                     "rendered-report.md",
                 )
-            send_report_delivery(
-                report=report,
-                markdown_path=markdown_path,
-                report_kind="baseline",
-            )
+            with self._telegram_chat_target(chat_id):
+                send_report_delivery(
+                    report=report,
+                    markdown_path=markdown_path,
+                    report_kind="baseline",
+                )
         except Exception as exc:  # noqa: BLE001
             return self._error_screen("Не удалось отправить выбранный UFC-отчёт.", exc)
         return {
@@ -272,6 +277,22 @@ class UfcReportsBridge:
             [{"text": "🥊 UFC", "callback_data": "ufc:home"}],
             [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ]
+
+    @staticmethod
+    @contextmanager
+    def _telegram_chat_target(chat_id: int | str | None) -> Any:
+        if not chat_id or os.environ.get("TELEGRAM_CHAT_ID"):
+            yield
+            return
+        previous = os.environ.get("TELEGRAM_CHAT_ID")
+        os.environ["TELEGRAM_CHAT_ID"] = str(chat_id)
+        try:
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("TELEGRAM_CHAT_ID", None)
+            else:
+                os.environ["TELEGRAM_CHAT_ID"] = previous
 
     @staticmethod
     def _ensure_ufc_reporter_path() -> None:
