@@ -12,9 +12,17 @@ UFC_INDEX_URL = "https://polymarket.com/sports/ufc"
 
 
 def enrich_event_with_totals(event: EventSnapshot) -> EventSnapshot:
-    payload = fetch_text(UFC_INDEX_URL, cache_namespace="polymarket")
-    next_data = _extract_next_data(payload)
-    events = _extract_index_events(next_data)
+    try:
+        payload = fetch_text(UFC_INDEX_URL, cache_namespace="polymarket")
+        next_data = _extract_next_data(payload)
+        events = _extract_index_events(next_data)
+    except Exception as exc:
+        event.quality_notes.append(
+            "`ТБ 1.5` / `ТБ 2.5`: Polymarket totals enrichment недоступен "
+            f"в текущем прогоне ({type(exc).__name__}: {exc})."
+        )
+        return event
+
     matched = 0
     for bout in event.bouts:
         market_event = _match_event_for_bout(bout.fighter_a_name, bout.fighter_b_name, events)
