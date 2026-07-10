@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     BOT_DATA_DIR=/app/data \
-    WORKSPACE_ROOT=/app/workspace
+    WORKSPACE_ROOT=/app/workspace \
+    UFC_REPORTER_RUNTIME_ROOT=/app/data/ufc-reporter
 
 WORKDIR /app
 
