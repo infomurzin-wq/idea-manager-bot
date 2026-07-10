@@ -85,6 +85,14 @@ CYRILLIC_TO_LATIN = str.maketrans(
     }
 )
 
+ISSUE_CODE_PATTERN = (
+    r"(?:[ПP]\d{2}-[БB][ОO]-\d+|[БB][ОO]-\d{3}[РP]-\d+|"
+    r"\d{3}[РP]-\d+|[БB][ОO]-[ПP]\d+|[БB][ОO]-\d+|"
+    r"[БB][ПPР]-?\d+|[БB]\d[РP]\d+|[ПPР]\d+[RР]?|"
+    r"\d+[РP]-\d+[RР]?|\d+[РP]\d+[RР]?|\d{5})"
+)
+NORMALIZED_ISSUE_CODE_PATTERN = ISSUE_CODE_PATTERN.translate(CYRILLIC_TO_LATIN).replace("О", "O")
+
 
 @dataclass
 class SourcePost:
@@ -317,7 +325,7 @@ def is_multi_card_title_line(line: str, following_lines: list[str]) -> bool:
         return False
     if not any(count_isin_like(candidate) > 0 for candidate in following_lines):
         return False
-    return bool(re.search(r"\b(?:[БB][ОO]\s+)?\d{3}[РP]-\d+\b|\b\d{3}[РP]-\d+\b|\b[БB][ОO]-[ПP]\d+\b", normalize_for_codes(title), re.IGNORECASE))
+    return bool(re.search(rf"\b{NORMALIZED_ISSUE_CODE_PATTERN}\b", normalize_for_codes(title), re.IGNORECASE))
 
 
 def trim_multi_card_block(lines: list[str]) -> str:
@@ -345,7 +353,7 @@ def is_card_detail_line(line: str) -> bool:
     cleaned = strip_line_marker(line)
     return bool(
         re.match(
-            r"^(?:ISIN|Рейтинг|Цена|Стоимость|Купон|Ставка купона|Дата погашения|Погашение|Купонов в год|Выплат в год|ТКД|YTM|Оферта|Амортизация)\s*:",
+            r"^(?:ISIN|Рейтинг|Кредитное качество|Цена|Стоимость(?: облигации)?|Котировка|Доходность|Купон|Ставка купона|Дата погашения|Погашение|Купонов в год|Выплат в год|Частота купона|ТКД|YTM|Оферта|Амортизация)\s*:",
             cleaned,
             re.IGNORECASE,
         )
@@ -353,7 +361,7 @@ def is_card_detail_line(line: str) -> bool:
 
 
 def strip_line_marker(line: str) -> str:
-    return re.sub(r"^[\s\-–—•●▪️✅💰🚀⚙️]+", "", line).strip()
+    return re.sub(r"^[\s\-–—•●▪️✅💰🚀⚙️]+", "", re.sub(r"^\s*\d+[.)]\s+", "", line)).strip()
 
 
 def looks_relevant(lowered: str) -> bool:
@@ -475,7 +483,7 @@ def extract_isin(text: str) -> str | None:
 
 
 def extract_rating(text: str) -> str | None:
-    label_match = re.search(r"рейтинг\s*:\s*([^\n,;()]+)", text, re.IGNORECASE)
+    label_match = re.search(r"(?:рейтинг|кредитное качество)\s*:\s*([^\n,;()]+)", text, re.IGNORECASE)
     if label_match:
         rating = find_rating_token(normalize_for_codes(label_match.group(1)))
         if rating:
@@ -594,7 +602,7 @@ def normalize_formula(value: str) -> str:
 
 
 def extract_price(text: str) -> str | None:
-    match = re.search(r"(?:цена|по цене|стоимость(?: облигации)?)[^%\n]{0,50}?(\d{2,3}(?:[,.]\d+)?)\s?%", text, re.IGNORECASE)
+    match = re.search(r"(?:цена|по цене|стоимость(?: облигации)?|котировка)[^%\n]{0,50}?(\d{2,3}(?:[,.]\d+)?)\s?%", text, re.IGNORECASE)
     return normalize_percent(match.group(1)) if match else None
 
 
@@ -650,6 +658,12 @@ def normalize_date(day: str, month: str, year: str) -> str:
 
 
 def extract_coupon_frequency(lowered: str) -> int | None:
+    if re.search(r"частота\s+купона\s*:\s*12", lowered):
+        return 12
+    if re.search(r"частота\s+купона\s*:\s*4", lowered):
+        return 4
+    if re.search(r"частота\s+купона\s*:\s*2", lowered):
+        return 2
     if re.search(r"(?:купон(?:ов)?|выплат)\s+в\s+год\s*:\s*12", lowered):
         return 12
     if re.search(r"(?:купон(?:ов)?|выплат)\s+в\s+год\s*:\s*4", lowered):
@@ -881,7 +895,7 @@ def first_meaningful_line(text: str) -> str | None:
         cleaned = strip_line_marker(line)
         if not cleaned or is_hashtag_line(cleaned):
             continue
-        if not re.match(r"^(рейтинг|isin|ytm|стоимость|купон|дата|срок|объем|объём|выплаты)\b", cleaned, re.IGNORECASE):
+        if not re.match(r"^(рейтинг|кредитное качество|isin|ytm|стоимость|котировка|доходность|купон|дата|срок|объем|объём|выплаты|частота)\b", cleaned, re.IGNORECASE):
             return trim_title_line(cleaned)
     return None
 
@@ -893,7 +907,7 @@ def is_hashtag_line(value: str) -> bool:
 
 def trim_title_line(value: str) -> str:
     return re.split(
-        r"\s+(?:Рейтинг|ISIN|Стоимость|YTM|Дата погашения|Купон|Ставка купона)\s*:",
+        r"\s+(?:Рейтинг|Кредитное качество|ISIN|Стоимость|Котировка|Доходность|YTM|Дата погашения|Купон|Ставка купона|Частота купона)\s*:",
         value,
         maxsplit=1,
         flags=re.IGNORECASE,
@@ -910,7 +924,7 @@ def looks_like_title(value: str) -> bool:
 
 def extract_issue_name(text: str, issuer: str | None = None) -> str | None:
     original_match = re.search(
-        r"\b(?:[ПP]\d{2}-[БB][ОO]-\d+|[БB][ОO]-\d{3}[РP]-\d+|\d{3}[РP]-\d+|[БB][ОO]-\d+|[БB][ПP]\d+|[БB][ПP]-\d+|[БB]\d[РP]\d+|\d[РP]\d+|\d[РP]-\d+|1P1|\d{5})\b",
+        rf"\b{ISSUE_CODE_PATTERN}\b",
         text,
         re.IGNORECASE,
     )
@@ -919,7 +933,7 @@ def extract_issue_name(text: str, issuer: str | None = None) -> str | None:
 
     normalized = normalize_for_codes(text)
     match = re.search(
-        r"\b(?:P\d{2}-BO-\d+|BO-\d{3}P-\d+|\d{3}P-\d+|BO-\d+|BP\d+|BP-\d+|B\dP\d+|\dP\d+|\dP-\d+|1P1|\d{5})\b",
+        rf"\b{NORMALIZED_ISSUE_CODE_PATTERN}\b",
         normalized,
         re.IGNORECASE,
     )
@@ -940,7 +954,7 @@ def restore_common_cyrillic_issue(value: str) -> str:
 
 def strip_issue_name(value: str) -> str:
     return re.sub(
-        r"\b(?:[BБ][OО]\s+)?(?:[PП]\d{2}-[BБ][OО]-\d+|\d{3}[PР]-\d+|[BБ][OО]-\d{3}[PР]-\d+|[BБ][OО]-\d+|[BБ][PП]\d+|[BБ][PП]-\d+|\d[PР]\d+|\d[PР]-\d+|1P1|\d{5})\b",
+        rf"\b(?:[BБ][OО]\s+)?{ISSUE_CODE_PATTERN}\b",
         "",
         value,
         flags=re.IGNORECASE,

@@ -838,6 +838,59 @@ class BondRadarIntegrationTest(unittest.TestCase):
         self.assertIn("YTM: 25,2%", text)
         self.assertNotIn("Open in Telegram", text)
 
+    def test_smartlab_link_text_keeps_bond_rows_for_manual_import(self) -> None:
+        html = """
+        <html><body>
+          <div class="menu">Ленты Форумы Котировки</div>
+          <div class="post-card__text ">
+            <p>До 17,6% годовых без экзотики.</p>
+            <h3>🏆 ТОП от 0,5 до 1 года</h3>
+            <p><strong>АФ БАНК 1Р14</strong></p>
+            <ul>
+              <li>ISIN: RU000A10B0U0</li>
+              <li>Котировка: 104,41%</li>
+              <li>Доходность: 16,8%</li>
+              <li>Купон: 23,00%</li>
+              <li>Кредитное качество: A</li>
+              <li>Дата погашения: 24.02.2027</li>
+              <li>Частота купона: 12</li>
+            </ul>
+            <p><strong>Ростелеком П15R</strong></p>
+            <ul>
+              <li>ISIN: RU000A10B214</li>
+              <li>Котировка: 102,33%</li>
+              <li>Доходность: 16,0%</li>
+              <li>Купон: 18,75%</li>
+              <li>Кредитное качество: AA</li>
+              <li>Дата погашения: 02.03.2027</li>
+              <li>Частота купона: 12</li>
+            </ul>
+          </div>
+          <div class="footer">Все форумы</div>
+        </body></html>
+        """
+        text = LinkReader._extract_smartlab_post_text(html)
+
+        self.assertIn("АФ БАНК 1Р14\nISIN: RU000A10B0U0", text)
+        self.assertIn("Ростелеком П15R\nISIN: RU000A10B214", text)
+        self.assertNotIn("Ленты Форумы", text)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bridge = BondRadarBridge(
+                scripts_dir=BondRadarBridge._bundled_scripts_dir(),
+                store_path=Path(tmp_dir) / "candidates_store.jsonl",
+            )
+
+            screen = bridge.import_manual_text(
+                text,
+                source_channel="web:smartlab",
+                source_url="https://smart-lab.ru/mobile/topic/1325620/",
+            )
+
+        self.assertEqual(2, screen["card_count"])
+        self.assertIn("АФ БАНК 1Р14", screen["text"])
+        self.assertIn("Ростелеком П15R", screen["text"])
+
     def test_link_reader_prefers_telegram_embed_url_for_post_links(self) -> None:
         self.assertEqual(
             [

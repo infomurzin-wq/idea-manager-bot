@@ -159,7 +159,11 @@ class LinkReader:
             )
 
         decoded = raw_bytes.decode("utf-8", errors="ignore")
-        extracted = self._extract_telegram_post_text(decoded) or self._extract_readable_text(decoded)
+        extracted = (
+            self._extract_telegram_post_text(decoded)
+            or self._extract_smartlab_post_text(decoded)
+            or self._extract_readable_text(decoded)
+        )
         if not extracted:
             return LinkReadResult(
                 url=url,
@@ -185,9 +189,29 @@ class LinkReader:
         text = re.sub(r"(?is)<script.*?>.*?</script>", " ", html)
         text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
         text = re.sub(r"(?is)<noscript.*?>.*?</noscript>", " ", text)
+        return LinkReader._html_to_text(text)
+
+    @staticmethod
+    def _extract_smartlab_post_text(html: str) -> str:
+        block = re.search(
+            r'(?is)<div[^>]+class="[^"]*\bpost-card__text\b[^"]*"[^>]*>(.*?)</div>',
+            html,
+        )
+        if not block:
+            return ""
+        return LinkReader._html_to_text(block.group(1))
+
+    @staticmethod
+    def _html_to_text(html: str) -> str:
+        text = re.sub(r"(?i)<br\s*/?>", "\n", html)
+        text = re.sub(r"(?i)</(?:p|div|h[1-6]|li|ul|ol|tr|table)>", "\n", text)
+        text = re.sub(r"(?i)<(?:p|div|h[1-6]|li|ul|ol|tr|table)[^>]*>", "\n", text)
         text = re.sub(r"(?s)<[^>]+>", " ", text)
         text = unescape(text)
-        text = re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        text = re.sub(r" +\n", "\n", text)
+        text = re.sub(r"\n\s+", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
         return text
 
     @staticmethod

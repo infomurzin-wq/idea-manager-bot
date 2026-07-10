@@ -432,7 +432,7 @@ class DiscountRadarIntegrationTest(unittest.TestCase):
         ]
 
         self.assertIn(MENU_DISCOUNT, labels)
-        self.assertNotIn(MENU_PROJECTS, labels)
+        self.assertIn(MENU_PROJECTS, labels)
         self.assertNotIn(MENU_CANCEL, labels)
 
     def test_main_menu_places_discount_radar_next_to_bonds(self) -> None:
