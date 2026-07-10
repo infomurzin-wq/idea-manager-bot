@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -274,16 +275,36 @@ class UfcReportsBridge:
 
     @staticmethod
     def _ensure_ufc_reporter_path() -> None:
+        if find_spec("ufc_reporter") is not None:
+            return
         explicit_path = os.environ.get("UFC_REPORTER_SRC", "").strip()
+        current_file = Path(__file__).resolve()
         candidates = [Path(explicit_path)] if explicit_path else []
-        candidates.append(UFC_REPORTER_SRC)
+        candidates.extend(
+            [
+                UFC_REPORTER_SRC,
+                Path.cwd() / "services" / "ufc-reporter" / "src",
+                Path("/app/services/ufc-reporter/src"),
+                Path("/workspace/services/ufc-reporter/src"),
+                Path("/app/src/services/ufc-reporter/src"),
+            ]
+        )
+        candidates.extend(
+            parent / "services" / "ufc-reporter" / "src"
+            for parent in current_file.parents
+        )
+        checked_paths: list[str] = []
         for candidate in candidates:
-            if candidate and candidate.exists():
+            if not candidate:
+                continue
+            checked_paths.append(str(candidate))
+            if (candidate / "ufc_reporter").is_dir():
                 raw_path = str(candidate)
                 if raw_path not in sys.path:
                     sys.path.insert(0, raw_path)
                 return
         raise RuntimeError(
             "UFC reporter source is not available. Expected services/ufc-reporter/src "
-            "or env UFC_REPORTER_SRC."
+            "or env UFC_REPORTER_SRC. Checked: "
+            + ", ".join(dict.fromkeys(checked_paths))
         )
