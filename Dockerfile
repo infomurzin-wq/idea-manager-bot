@@ -12,6 +12,7 @@ COPY pyproject.toml README.md /app/
 COPY src /app/src
 COPY scripts /app/scripts
 COPY docs /app/docs
+COPY services/ufc-reporter /app/services/ufc-reporter
 
 RUN pip install --upgrade pip && pip install .
 

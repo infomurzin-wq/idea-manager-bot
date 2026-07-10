@@ -44,6 +44,7 @@ from idea_manager_bot.llm import LLMService
 from idea_manager_bot.project_registry import build_project_registry
 from idea_manager_bot.storage import IdeaStorage
 from idea_manager_bot.t_invest import TInvestClient
+from idea_manager_bot.ufc_reports_bridge import UfcReportsBridge
 
 
 logging.basicConfig(
@@ -58,6 +59,7 @@ MENU_LIST_IDEAS = "🗂 Список идей"
 MENU_LIST_CONTEXT = "📚 Список контекста"
 MENU_BONDS = "📡 Облигации"
 MENU_DISCOUNT = "🛒 Дисконт Радар"
+MENU_UFC = "🥊 UFC"
 MENU_PROJECTS = "🧭 Разделы"
 MENU_CANCEL = "❌ Отмена"
 
@@ -68,6 +70,7 @@ MENU_PLAIN_LABELS = {
     MENU_LIST_CONTEXT: "Список контекста",
     MENU_BONDS: "Облигации",
     MENU_DISCOUNT: "Дисконт Радар",
+    MENU_UFC: "UFC",
     MENU_PROJECTS: "Разделы",
     MENU_CANCEL: "Отмена",
 }
@@ -108,6 +111,7 @@ class IdeaManagerApp:
         self.exporter = SyncExporter(settings)
         self.bond_radar = BondRadarBridge.from_workspace(settings.workspace_root)
         self.discount_radar = DiscountRadarBridge.from_data_dir(settings.bot_data_dir)
+        self.ufc_reports = UfcReportsBridge()
         self.t_invest = TInvestClient(settings.t_invest_token)
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -131,7 +135,8 @@ class IdeaManagerApp:
             f"`{MENU_LIST_IDEAS}`: открыть список идей кнопками.\n"
             f"`{MENU_LIST_CONTEXT}`: открыть список контекста кнопками.\n"
             f"`{MENU_BONDS}`: открыть Bond Radar.\n"
-            f"`{MENU_DISCOUNT}`: открыть Дисконт Радар.",
+            f"`{MENU_DISCOUNT}`: открыть Дисконт Радар.\n"
+            f"`{MENU_UFC}`: открыть UFC-отчёты.",
             parse_mode="Markdown",
             reply_markup=self._main_menu(),
         )
@@ -145,6 +150,11 @@ class IdeaManagerApp:
         if not update.message:
             return
         await self._send_discount_screen(update.message, "discount:home", update.effective_user.id)
+
+    async def ufc_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        await self._send_ufc_screen(update.message, "ufc:home")
 
     async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
@@ -260,6 +270,10 @@ class IdeaManagerApp:
             await self._send_discount_screen(update.message, "discount:home", update.effective_user.id)
             return
 
+        if menu_text_matches(text, MENU_UFC):
+            await self._send_ufc_screen(update.message, "ufc:home")
+            return
+
         if menu_text_matches(text, MENU_PROJECTS):
             await self.projects_command(update, context)
             return
@@ -356,6 +370,38 @@ class IdeaManagerApp:
         if data.startswith("discount:"):
             user_id = update.effective_user.id if update.effective_user else 0
             await self._send_discount_screen(query.message, data, user_id)
+            return
+
+        if data == "ufc:run-full":
+            await query.message.reply_text("🥊 Запускаю полный UFC-отчёт. Это может занять несколько минут.")
+            screen = await asyncio.to_thread(self.ufc_reports.run_full_report)
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
+        if data == "ufc:run-changes":
+            await query.message.reply_text("🥊 Проверяю UFC-изменения. Это может занять несколько минут.")
+            screen = await asyncio.to_thread(self.ufc_reports.run_incremental_check)
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
+        if data.startswith("ufc:send:"):
+            slug = data.removeprefix("ufc:send:")
+            await query.message.reply_text("🥊 Отправляю выбранный UFC-отчёт файлом.")
+            screen = await asyncio.to_thread(self.ufc_reports.send_existing_report, slug)
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
+        if data.startswith("ufc:"):
+            await self._send_ufc_screen(query.message, data)
             return
 
         if ":" not in data:
@@ -1230,6 +1276,13 @@ class IdeaManagerApp:
             reply_markup=self.discount_radar.inline_keyboard(screen.get("buttons", [])),
         )
 
+    async def _send_ufc_screen(self, message: Message, action: str) -> None:
+        screen = await asyncio.to_thread(self.ufc_reports.handle_action, action)
+        await message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
+        )
+
     async def _handle_discount_input(
         self,
         update: Update,
@@ -1413,6 +1466,7 @@ class IdeaManagerApp:
                 [KeyboardButton(MENU_NEW_IDEA), KeyboardButton(MENU_NEW_CONTEXT)],
                 [KeyboardButton(MENU_LIST_IDEAS), KeyboardButton(MENU_LIST_CONTEXT)],
                 [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_DISCOUNT)],
+                [KeyboardButton(MENU_UFC), KeyboardButton(MENU_PROJECTS)],
             ],
             resize_keyboard=True,
             one_time_keyboard=True,
@@ -1447,6 +1501,7 @@ async def post_init(application: Application) -> None:
         BotCommand("myid", "Показать chat_id"),
         BotCommand("bonds", "Открыть Bond Radar"),
         BotCommand("discount", "Открыть Дисконт Радар"),
+        BotCommand("ufc", "Открыть UFC отчёты"),
         BotCommand("projects", "Список разделов"),
         BotCommand("list", "Список идей"),
         BotCommand("show", "Показать идею по ID"),
@@ -1465,6 +1520,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("myid", app_logic.myid_command))
     application.add_handler(CommandHandler("bonds", app_logic.bonds_command))
     application.add_handler(CommandHandler("discount", app_logic.discount_command))
+    application.add_handler(CommandHandler("ufc", app_logic.ufc_command))
     application.add_handler(CommandHandler("projects", app_logic.projects_command))
     application.add_handler(CommandHandler("list", app_logic.list_command))
     application.add_handler(CommandHandler("show", app_logic.show_command))
