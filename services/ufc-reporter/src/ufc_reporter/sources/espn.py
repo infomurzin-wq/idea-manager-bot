@@ -346,6 +346,7 @@ def _minimal_core_fighter(
         record_summary="n/a",
         wins_summary="0 KO/TKO, 0 Submission, 0 Decision, 0 Other",
         losses_summary="0 KO/TKO, 0 Submission, 0 Decision, 0 Other",
+        image_url=_extract_image_url(competitor),
         sources=[],
         last_five=[],
         fighter_commentary_ru=(
@@ -375,6 +376,7 @@ def build_fighter_from_match_side(
     history_entries = history_payload.get("page", {}).get("content", {}).get("player", {}).get("fghtHstr", [])
     player_header = history_payload.get("page", {}).get("content", {}).get("player", {}).get("plyrHdr", {})
     stats_block = player_header.get("statsBlck", {}).get("vals", [])
+    image_url = _extract_image_url(player_header)
     last_five = [convert_history_entry(entry) for entry in history_entries[:5]]
     summary = derive_summary_from_history(history_entries, stats_block)
     record_summary = summary["record_summary"] or side.get("rec", "n/a")
@@ -396,6 +398,7 @@ def build_fighter_from_match_side(
         record_summary=record_summary,
         wins_summary=summary["wins_summary"],
         losses_summary=summary["losses_summary"],
+        image_url=image_url,
         sources=sources,
         last_five=last_five,
         fighter_commentary_ru=build_fighter_commentary(fighter_name, last_five, summary),
@@ -420,6 +423,7 @@ def build_fighter_from_core_competitor(
     )
     overview_url = _core_athlete_link(athlete_payload, "overview")
     history_url = _core_athlete_link(athlete_payload, "history")
+    image_url = _extract_image_url(athlete_payload) or _extract_image_url(competitor)
     records_payload = _fetch_core_json(_nested_ref(athlete_payload, "records")) if _nested_ref(athlete_payload, "records") else {}
     summary = derive_summary_from_core_records(records_payload)
     last_five = build_last_five_from_core_eventlog(
@@ -465,6 +469,7 @@ def build_fighter_from_core_competitor(
         record_summary=summary["record_summary"],
         wins_summary=summary["wins_summary"],
         losses_summary=summary["losses_summary"],
+        image_url=image_url,
         sources=sources,
         last_five=last_five,
         fighter_commentary_ru=build_fighter_commentary(fighter_name, last_five, summary),
@@ -607,6 +612,55 @@ def _https_url(value: str) -> str:
     if value.startswith("http://"):
         return f"https://{value.removeprefix('http://')}"
     return value
+
+
+def _extract_image_url(payload: dict[str, Any]) -> str:
+    candidates: list[Any] = [
+        payload.get("image_url"),
+        payload.get("headshot"),
+        payload.get("image"),
+        payload.get("photo"),
+        payload.get("img"),
+    ]
+
+    athlete = payload.get("ath")
+    if isinstance(athlete, dict):
+        candidates.extend(
+            [
+                athlete.get("img"),
+                athlete.get("image"),
+                athlete.get("headshot"),
+            ]
+        )
+
+    for key in ("headshots", "images", "photos"):
+        values = payload.get(key)
+        if isinstance(values, list):
+            candidates.extend(values)
+
+    for candidate in candidates:
+        url = _image_url_from_candidate(candidate)
+        if url:
+            return url
+    return ""
+
+
+def _image_url_from_candidate(candidate: Any) -> str:
+    if isinstance(candidate, str):
+        value = candidate.strip()
+        if value.startswith("//"):
+            return f"https:{value}"
+        if value.startswith("http://") or value.startswith("https://"):
+            return _https_url(value)
+        return ""
+    if isinstance(candidate, dict):
+        for key in ("href", "url", "src"):
+            value = candidate.get(key)
+            if isinstance(value, str):
+                url = _image_url_from_candidate(value)
+                if url:
+                    return url
+    return ""
 
 
 def _nested_ref(payload: dict[str, Any], key: str) -> str:

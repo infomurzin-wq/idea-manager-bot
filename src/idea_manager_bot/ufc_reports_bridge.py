@@ -44,7 +44,7 @@ class UfcReportsBridge:
         return self._result_screen(
             title="🥊 Полный UFC-отчёт",
             result=result,
-            changed_text="Полный отчёт собран и отправлен в Telegram.",
+            changed_text="Полный отчёт и JSON-снапшот собраны и отправлены в Telegram.",
             unchanged_text="Полный отчёт не был отправлен.",
         )
 
@@ -63,7 +63,7 @@ class UfcReportsBridge:
                     result=baseline_result,
                     changed_text=(
                         "Активного baseline не было, поэтому вместо diff собран и отправлен "
-                        "полный отчёт."
+                        "полный отчёт и JSON-снапшот."
                     ),
                     unchanged_text="Активного baseline не было, полный отчёт не отправлен.",
                 )
@@ -72,7 +72,7 @@ class UfcReportsBridge:
         return self._result_screen(
             title="🥊 Проверка изменений UFC",
             result=result,
-            changed_text="Найдены изменения. В Telegram отправлен файл только с изменениями.",
+            changed_text="Найдены изменения. В Telegram отправлены файл с изменениями и JSON-снапшот.",
             unchanged_text="Изменений относительно последней отправленной версии нет.",
         )
 
@@ -80,10 +80,11 @@ class UfcReportsBridge:
         try:
             self._ensure_ufc_reporter_path()
             from ufc_reporter.rendering import render_report
-            from ufc_reporter.state_store import load_snapshot, write_rendered_markdown
+            from ufc_reporter.state_store import load_snapshot, resolve_snapshot_path, write_rendered_markdown
             from ufc_reporter.telegram import send_report_delivery
 
             report = load_snapshot(slug)
+            snapshot_path = resolve_snapshot_path(slug)
             markdown_path = self._markdown_path_for_slug(slug)
             if not markdown_path.exists():
                 markdown_path = write_rendered_markdown(
@@ -95,6 +96,7 @@ class UfcReportsBridge:
                 send_report_delivery(
                     report=report,
                     markdown_path=markdown_path,
+                    snapshot_path=snapshot_path,
                     report_kind="baseline",
                 )
         except Exception as exc:  # noqa: BLE001
@@ -102,7 +104,7 @@ class UfcReportsBridge:
         return {
             "text": "\n".join(
                 [
-                    "🥊 UFC-отчёт отправлен.",
+                    "🥊 UFC-отчёт и JSON-снапшот отправлены.",
                     f"Турнир: {report.event.event_name}",
                     f"Дата: {report.event.event_date}",
                 ]

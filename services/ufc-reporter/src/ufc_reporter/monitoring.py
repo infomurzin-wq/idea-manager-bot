@@ -85,7 +85,13 @@ def _run_baseline(*, current_date: date, send: str, weekend_only: bool) -> Monit
         window_opened_at=_now_iso(),
         window_status="active",
     )
-    _send_if_requested(send=send, report=report, markdown_path=markdown_path, report_kind="baseline")
+    _send_if_requested(
+        send=send,
+        report=report,
+        markdown_path=markdown_path,
+        snapshot_path=snapshot_path,
+        report_kind="baseline",
+    )
     update_sent_report_state(
         event_slug=report.event.event_slug,
         report=report,
@@ -159,6 +165,7 @@ def _run_incremental(*, current_date: date, send: str, weekend_only: bool) -> Mo
         send=send,
         report=report,
         diff_markdown_path=diff_markdown_path,
+        snapshot_path=snapshot_path,
     )
     update_sent_report_state(
         event_slug=report.event.event_slug,
@@ -213,6 +220,7 @@ def _send_if_requested(
     send: str,
     report: ReportSnapshot,
     markdown_path: Path,
+    snapshot_path: Path,
     report_kind: str,
 ) -> None:
     if send == "none":
@@ -221,6 +229,7 @@ def _send_if_requested(
         send_report_delivery(
             report=report,
             markdown_path=markdown_path,
+            snapshot_path=snapshot_path,
             report_kind=report_kind,
         )
         return
@@ -232,10 +241,15 @@ def _send_incremental_if_requested(
     send: str,
     report: ReportSnapshot,
     diff_markdown_path: Path,
+    snapshot_path: Path,
 ) -> None:
     if send == "none":
         return
     if send == "telegram":
-        send_update_delivery(report=report, diff_markdown_path=diff_markdown_path)
+        send_update_delivery(
+            report=report,
+            diff_markdown_path=diff_markdown_path,
+            snapshot_path=snapshot_path,
+        )
         return
     raise ValueError(f"Unsupported send target: {send}")

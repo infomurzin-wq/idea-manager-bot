@@ -129,6 +129,40 @@ Discount Radar cron checked 1 users, 3 products, 0 discounted products, 1 errors
 7. Удали `DISCOUNT_CRON_DRY_RUN`, чтобы включить реальные уведомления.
 8. Оставь основной bot service без изменений, он продолжает запускаться обычной командой `idea-manager-bot`.
 
+## UFC Reporter scheduled service
+
+Для UFC-отчётов используется отдельный Railway scheduled service из того же GitHub repo. Он запускает сервис из подпапки:
+
+```text
+services/ufc-reporter
+```
+
+Start command можно оставить из Dockerfile:
+
+```bash
+python -m ufc_reporter.cli railway-cron
+```
+
+Cron schedule:
+
+```text
+0 7 * * 4,5,6
+```
+
+Это четверг/пятница/суббота в 07:00 UTC, то есть 10:00 по Москве. `railway-cron` сам выбирает baseline или incremental по московской дате.
+
+Нужные env vars:
+
+```text
+TELEGRAM_BOT_TOKEN=<existing-personal-bot-token>
+TELEGRAM_CHAT_ID=443939869
+UFC_REPORTER_RUNTIME_ROOT=/data/ufc-reporter
+```
+
+Подключи Railway Volume к `/data`. Там хранятся active weekend state, sent report state, runtime cache, `rendered-report.md`, `incremental-changes.md` и `report_snapshot.json`.
+
+Telegram delivery UFC reporter отправляет два файла на baseline: полный Markdown `.md` и JSON snapshot `.json`. На incremental update отправляются `incremental-changes.md` и свежий JSON snapshot `.json`. Этот JSON можно загружать в decision workbook prototype.
+
 ## Локальная сторона
 
 На Mac должен быть клон sync-репозитория, например:

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import get_paths
 from .models import ReportSnapshot
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
@@ -40,6 +41,7 @@ def send_report_delivery(
     *,
     report: ReportSnapshot,
     markdown_path: Path,
+    snapshot_path: Path | None = None,
     report_kind: str,
 ) -> None:
     config = load_telegram_config()
@@ -50,12 +52,14 @@ def send_report_delivery(
         caption=build_document_caption(report=report, report_kind=report_kind),
         filename=f"{report.event.event_date}-{report.event.event_slug}-{report_kind}.md",
     )
+    send_snapshot_document(config, report=report, snapshot_path=snapshot_path)
 
 
 def send_update_delivery(
     *,
     report: ReportSnapshot,
     diff_markdown_path: Path,
+    snapshot_path: Path | None = None,
 ) -> None:
     config = load_telegram_config()
     send_message(config, build_incremental_summary_message(report=report))
@@ -65,15 +69,16 @@ def send_update_delivery(
         caption=f"{report.event.event_name} | {report.event.event_date} | только изменения",
         filename=f"{report.event.event_date}-{report.event.event_slug}-changes.md",
     )
+    send_snapshot_document(config, report=report, snapshot_path=snapshot_path)
 
 
 def build_summary_message(*, report: ReportSnapshot, report_kind: str) -> str:
     if report_kind == "baseline":
         title = "UFC baseline report"
-        description = "Найден турнир на ближайшие выходные. Полный Markdown-отчёт прикреплён файлом."
+        description = "Найден турнир на ближайшие выходные. Полный Markdown-отчёт и JSON-снапшот прикреплены файлами."
     else:
         title = "UFC report update"
-        description = "Есть meaningful changes относительно последней отправленной версии. Обновлённый Markdown-отчёт прикреплён файлом."
+        description = "Есть meaningful changes относительно последней отправленной версии. Обновлённый Markdown-отчёт и JSON-снапшот прикреплены файлами."
     return "\n".join(
         [
             title,
@@ -91,7 +96,7 @@ def build_incremental_summary_message(*, report: ReportSnapshot) -> str:
             "UFC report update",
             f"Турнир: {report.event.event_name}",
             f"Дата: {report.event.event_date}",
-            "Найдены meaningful changes. Прикреплён файл только с изменениями, не полный отчёт.",
+            "Найдены meaningful changes. Прикреплены файл с изменениями и свежий JSON-снапшот.",
         ]
     )
 
@@ -99,6 +104,29 @@ def build_incremental_summary_message(*, report: ReportSnapshot) -> str:
 def build_document_caption(*, report: ReportSnapshot, report_kind: str) -> str:
     label = "baseline" if report_kind == "baseline" else "update"
     return f"{report.event.event_name} | {report.event.event_date} | {label}"
+
+
+def build_snapshot_caption(*, report: ReportSnapshot) -> str:
+    return f"{report.event.event_name} | {report.event.event_date} | JSON snapshot"
+
+
+def send_snapshot_document(
+    config: TelegramConfig,
+    *,
+    report: ReportSnapshot,
+    snapshot_path: Path | None = None,
+) -> None:
+    resolved_snapshot_path = snapshot_path or default_snapshot_path(report)
+    send_document(
+        config,
+        document_path=resolved_snapshot_path,
+        caption=build_snapshot_caption(report=report),
+        filename=f"{report.event.event_date}-{report.event.event_slug}-snapshot.json",
+    )
+
+
+def default_snapshot_path(report: ReportSnapshot) -> Path:
+    return get_paths().runtime_reports_dir / report.event.event_slug / "report_snapshot.json"
 
 
 def send_message(config: TelegramConfig, text: str) -> dict[str, Any]:

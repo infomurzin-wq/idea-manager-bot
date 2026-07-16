@@ -60,9 +60,9 @@
 
 Результат:
 - baseline и updates доходят в личный Telegram-чат пользователя;
-- полный Markdown-отчёт отправляется как `.md` файл;
-- baseline отправляет полный Markdown-отчёт;
-- incremental отправляет короткое summary и отдельный `.md` файл только с изменениями.
+- `report_snapshot.json` сохраняется в runtime рядом с Markdown для каждого прогона;
+- baseline отправляет полный Markdown-отчёт `.md` и JSON-снапшот `.json`;
+- incremental отправляет короткое summary, отдельный `.md` файл только с изменениями и свежий JSON-снапшот `.json`.
 
 ### Фаза 5. Railway automation
 
@@ -134,7 +134,7 @@ PYTHONPATH=07_automation/src python -m ufc_reporter.cli monitor \
 - если event найден, создаёт baseline snapshot и открывает `active_weekend_event.json`;
 - в incremental-режиме продолжает только уже открытую weekend window;
 - сравнивает не raw `content_hash`, а `meaningful_hash`, чтобы micro-moves в `Polymarket` totals не считались полноценным update сами по себе;
-- при `--send telegram` baseline отправляет полный Markdown-отчёт, а incremental отправляет только `incremental-changes.md` с новыми/изменёнными данными.
+- при `--send telegram` baseline отправляет полный Markdown-отчёт и `report_snapshot.json`, а incremental отправляет `incremental-changes.md` с новыми/изменёнными данными и свежий `report_snapshot.json`.
 
 Telegram delivery требует env-переменные:
 
@@ -167,12 +167,13 @@ python -m ufc_reporter.cli telegram-send-report \
 Текущий статус:
 
 - `telegram.py` реализует `sendMessage` и `sendDocument` через Telegram Bot API;
-- `monitor --send telegram` отправляет summary message и `.md` document;
-- baseline document содержит полный отчёт;
-- incremental document содержит только изменения относительно последнего отправленного snapshot;
+- `monitor --send telegram` отправляет summary message, `.md` document и `.json` snapshot document;
+- baseline Markdown document содержит полный отчёт;
+- incremental Markdown document содержит только изменения относительно последнего отправленного snapshot;
+- JSON document содержит полный свежий `ReportSnapshot` и подходит для загрузки в decision workbook prototype;
 - личный `chat_id` получен через `/myid`: `443939869`;
 - `telegram-updates` остаётся fallback-путём, но не основным способом;
-- `telegram-send-report` отправляет уже готовый runtime Markdown без полного rebuild;
+- `telegram-send-report` отправляет уже готовый runtime Markdown и JSON snapshot без полного rebuild;
 - реальный smoke test доставки выполнен успешно.
 
 ## Railway deployment
@@ -189,7 +190,7 @@ python -m ufc_reporter.cli railway-cron
 - в пятницу и субботу по московской дате запускает `incremental`;
 - в остальные дни ничего не делает и печатает `status=skipped`;
 - всегда использует `--weekend-only`;
-- по умолчанию отправляет результат в Telegram.
+- по умолчанию отправляет результат в Telegram: Markdown-документ и JSON snapshot-документ.
 
 Railway env vars:
 
@@ -199,7 +200,7 @@ TELEGRAM_CHAT_ID=443939869
 UFC_REPORTER_RUNTIME_ROOT=/data/ufc-reporter
 ```
 
-Для корректной пятницы/субботы нужен persistent state. На Railway нужно подключить Volume и примонтировать его в `/data`, иначе `active_weekend_event.json` и `sent_reports.json` могут потеряться между запусками.
+Для корректной пятницы/субботы нужен persistent state. На Railway нужно подключить Volume и примонтировать его в `/data`, иначе `active_weekend_event.json`, `sent_reports.json` и сохранённые `report_snapshot.json` могут потеряться между запусками.
 
 Railway schedule:
 

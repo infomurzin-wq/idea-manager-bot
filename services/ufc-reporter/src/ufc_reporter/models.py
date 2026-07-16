@@ -39,6 +39,7 @@ class FighterSnapshot:
     record_summary: str
     wins_summary: str
     losses_summary: str
+    image_url: str = ""
     sources: list[str] = field(default_factory=list)
     last_five: list[FightResultEntry] = field(default_factory=list)
     fighter_commentary_ru: str = ""
@@ -54,6 +55,7 @@ class FighterSnapshot:
             record_summary=payload["record_summary"],
             wins_summary=payload["wins_summary"],
             losses_summary=payload["losses_summary"],
+            image_url=payload.get("image_url", ""),
             sources=list(payload.get("sources", [])),
             last_five=[
                 FightResultEntry.from_dict(item)
@@ -187,4 +189,3 @@ class ReportSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

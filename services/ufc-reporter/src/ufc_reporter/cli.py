@@ -250,19 +250,26 @@ def _handle_telegram_updates(args: argparse.Namespace) -> int:
 
 
 def _handle_telegram_send_report(args: argparse.Namespace) -> int:
-    from .state_store import ensure_runtime_dirs, load_snapshot
+    from .state_store import ensure_runtime_dirs, load_snapshot, resolve_snapshot_path
     from .telegram import send_report_delivery
 
     ensure_runtime_dirs()
     report = load_snapshot(args.snapshot)
+    snapshot_path = resolve_snapshot_path(args.snapshot)
     markdown_path = (
         Path(args.markdown).resolve()
         if args.markdown
         else _default_render_target(report.event.event_slug)
     )
-    send_report_delivery(report=report, markdown_path=markdown_path, report_kind=args.kind)
+    send_report_delivery(
+        report=report,
+        markdown_path=markdown_path,
+        snapshot_path=snapshot_path,
+        report_kind=args.kind,
+    )
     print("status=sent")
     print(f"event_slug={report.event.event_slug}")
+    print(f"snapshot={snapshot_path}")
     print(f"markdown={markdown_path}")
     return 0
 
