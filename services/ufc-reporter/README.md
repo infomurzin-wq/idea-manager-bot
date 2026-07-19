@@ -109,8 +109,9 @@ PYTHONPATH=07_automation/src python -m ufc_reporter.cli fetch-espn-event \
 - карточка турнира и последние 5 боёв идут из `ESPN`;
 - если `ESPN` отдаёт неполную карту, missing bouts добираются из `UFC.com event page`;
 - moneyline автоматически обогащается из `MMAOddsBreaker opening odds`, если статья по ивенту найдена через WordPress API;
-- `ТБ 1.5` и `ТБ 2.5` тянутся из `Polymarket UFC index` как market-implied decimal odds;
-- важно: totals сейчас не sportsbook, а prediction-market proxy.
+- `ТБ 1.5` и `ТБ 2.5` по умолчанию тянутся из prediction-market слоя: сейчас активен `Polymarket UFC markets`;
+- важно: totals сейчас не sportsbook, а prediction-market proxy; новые JSON snapshots явно пишут `odds_source_note` по бою, чтобы в workbook было видно, откуда пришла альтернативная линия;
+- следующие кандидаты на fallback для duration/finish линии: `SX Bet` MMA markets и `Kalshi` UFC markets, но они должны подключаться non-blocking и не должны ломать Telegram-отчёт, если API/матчинг недоступен.
 
 Event-gated monitoring baseline:
 

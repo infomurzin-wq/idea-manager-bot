@@ -88,6 +88,13 @@ def _render_bout(bout: BoutSnapshot) -> list[str]:
         f"- `ТБ 2.5`: `{bout.over_2_5_decimal}`",
         "",
     ]
+    if bout.odds_source_note:
+        lines.extend(
+            [
+                f"- Источник альтернативной линии: `{bout.odds_source_note}`",
+                "",
+            ]
+        )
     if bout.fighter_a:
         lines.extend(_render_fighter(bout.fighter_a))
         lines.append("")

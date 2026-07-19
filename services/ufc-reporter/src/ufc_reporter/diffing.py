@@ -111,6 +111,7 @@ def _bout_changes(previous: BoutSnapshot, current: BoutSnapshot) -> list[str]:
     )
     _append_change(changes, "ТБ 1.5", previous.over_1_5_decimal, current.over_1_5_decimal)
     _append_change(changes, "ТБ 2.5", previous.over_2_5_decimal, current.over_2_5_decimal)
+    _append_change(changes, "Источник альтернативной линии", previous.odds_source_note, current.odds_source_note)
     _append_change(changes, "Комментарий по бою", previous.bout_commentary_ru, current.bout_commentary_ru)
 
     changes.extend(_fighter_changes(previous.fighter_a, current.fighter_a))

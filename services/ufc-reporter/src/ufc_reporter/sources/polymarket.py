@@ -3,25 +3,35 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlencode
 
 from .http import fetch_text
 from ..models import EventSnapshot
 from ..normalize import fighter_name_score
 
 UFC_INDEX_URL = "https://polymarket.com/sports/ufc"
+GAMMA_SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
+POLYMARKET_TOTALS_NOTE = (
+    "Тоталы взяты из Polymarket prediction-market proxy: decimal-implied odds "
+    "из вероятности рынка, не классическая букмекерская линия."
+)
 
 
 def enrich_event_with_totals(event: EventSnapshot) -> EventSnapshot:
     try:
-        payload = fetch_text(UFC_INDEX_URL, cache_namespace="polymarket")
-        next_data = _extract_next_data(payload)
-        events = _extract_index_events(next_data)
+        events = _fetch_gamma_events(event.event_name)
     except Exception as exc:
-        event.quality_notes.append(
-            "`ТБ 1.5` / `ТБ 2.5`: Polymarket totals enrichment недоступен "
-            f"в текущем прогоне ({type(exc).__name__}: {exc})."
-        )
-        return event
+        try:
+            payload = fetch_text(UFC_INDEX_URL, cache_namespace="polymarket")
+            next_data = _extract_next_data(payload)
+            events = _extract_index_events(next_data)
+        except Exception as fallback_exc:
+            event.quality_notes.append(
+                "`ТБ 1.5` / `ТБ 2.5`: Polymarket totals enrichment недоступен "
+                f"в текущем прогоне ({type(exc).__name__}: {exc}; "
+                f"fallback {type(fallback_exc).__name__}: {fallback_exc})."
+            )
+            return event
 
     matched = 0
     for bout in event.bouts:
@@ -35,10 +45,11 @@ def enrich_event_with_totals(event: EventSnapshot) -> EventSnapshot:
         if over_2_5 != "n/a":
             bout.over_2_5_decimal = over_2_5
         if over_1_5 != "n/a" or over_2_5 != "n/a":
+            bout.odds_source_note = POLYMARKET_TOTALS_NOTE
             matched += 1
 
     if matched:
-        source_link = f"[Polymarket UFC index]({UFC_INDEX_URL})"
+        source_link = f"[Polymarket UFC markets]({UFC_INDEX_URL})"
         if source_link not in event.primary_sources:
             event.primary_sources.append(source_link)
         if "polymarket_totals" not in event.source:
@@ -57,6 +68,18 @@ def enrich_event_with_totals(event: EventSnapshot) -> EventSnapshot:
             "`ТБ 1.5` / `ТБ 2.5`: Polymarket totals markets для текущих боёв автоматически не сматчились."
         )
     return event
+
+
+def _fetch_gamma_events(event_name: str) -> list[dict[str, Any]]:
+    query_string = urlencode({"q": event_name, "limit_per_type": "50"})
+    payload = fetch_text(f"{GAMMA_SEARCH_URL}?{query_string}", cache_namespace="polymarket")
+    parsed = json.loads(payload)
+    events = parsed.get("events", [])
+    if not isinstance(events, list):
+        raise ValueError("Polymarket Gamma API search returned no events list.")
+    if not events:
+        raise ValueError("Polymarket Gamma API search returned no matching events.")
+    return events
 
 
 def _extract_next_data(page_html: str) -> dict[str, Any]:
@@ -115,8 +138,8 @@ def _extract_over_decimal(event: dict[str, Any], question: str) -> str:
     for market in event.get("markets", []):
         if market.get("question") != question:
             continue
-        outcomes = market.get("outcomes", [])
-        prices = market.get("outcomePrices", [])
+        outcomes = _parse_polymarket_list(market.get("outcomes", []))
+        prices = _parse_polymarket_list(market.get("outcomePrices", []))
         if not isinstance(outcomes, list) or not isinstance(prices, list):
             return "n/a"
         try:
@@ -127,6 +150,15 @@ def _extract_over_decimal(event: dict[str, Any], question: str) -> str:
             return "n/a"
         return _probability_to_decimal(prices[over_index])
     return "n/a"
+
+
+def _parse_polymarket_list(raw_value: Any) -> Any:
+    if isinstance(raw_value, str):
+        try:
+            return json.loads(raw_value)
+        except json.JSONDecodeError:
+            return raw_value
+    return raw_value
 
 
 def _probability_to_decimal(raw_value: str) -> str:

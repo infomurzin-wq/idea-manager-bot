@@ -42,8 +42,10 @@ Moneyline:
 - later: можно заменить или дополнить более стабильным market source, если понадобится closing line или totals.
 
 Totals:
-- `Polymarket UFC index` — текущий Stage 2 source для `ТБ 1.5 / ТБ 2.5`;
-- важно: это не классический букмекерский рынок, а market-implied proxy из prediction market.
+- prediction-market слой используется по умолчанию как альтернативная линия для `duration/finish`, особенно когда обычные источники не дают `ТБ 1.5 / ТБ 2.5`;
+- `Polymarket UFC markets` — текущий активный Stage 2 source для `ТБ 1.5 / ТБ 2.5`;
+- `SX Bet` MMA markets и `Kalshi` UFC markets — следующие кандидаты на fallback-адаптеры;
+- важно: это не классический букмекерский рынок, а market-implied proxy из prediction market; такие значения должны явно маркироваться в snapshot/report через `odds_source_note`.
 
 История бойца за последние 5 боёв:
 - `ESPN MMA` — основной источник;
@@ -94,6 +96,7 @@ Totals:
 - коэффициент на бойца `B` в decimal format, если доступен;
 - коэффициент на `ТБ 1.5`, если доступен;
 - коэффициент на `ТБ 2.5`, если доступен;
+- источник альтернативной линии, если totals/duration подтянуты из prediction-market proxy;
 - русский аналитический комментарий по бою.
 - краткая сводка, есть ли на стороне одного из бойцов существенный предбоевой сигнал.
 
@@ -153,6 +156,7 @@ Totals:
 - `fighter_b_moneyline_decimal`
 - `over_1_5_decimal`
 - `over_2_5_decimal`
+- `odds_source_note`
 - `bout_commentary_ru`
 
 ### `FighterSnapshot`
@@ -292,13 +296,15 @@ ufc-betting/
 - `ESPN` как primary source для event card и fighter history;
 - `UFC.com` как fallback card source;
 - `MMAOddsBreaker` как secondary source adapter для opening moneyline;
-- `Polymarket` как totals source для `ТБ 1.5 / ТБ 2.5`;
+- `Polymarket` как активный prediction-market totals source для `ТБ 1.5 / ТБ 2.5`;
+- `odds_source_note` в `BoutSnapshot`, чтобы JSON/Markdown/workbook явно показывали, что totals пришли из prediction-market proxy, а не из классической букмекерской линии;
 - автоматическая конвертация american odds в `decimal`;
 - merge коэффициентов и fallback-card данных в текущие `BoutSnapshot` без ручной правки отчёта.
 
 Что пока не реализовано:
 
-- sportsbook-grade источник для `ТБ 1.5` и `ТБ 2.5`;
+- fallback-адаптеры для `SX Bet` и `Kalshi`, если их текущая UFC-линия стабильно мапится на наши бои;
+- sportsbook-grade источник для `ТБ 1.5` и `ТБ 2.5`, если позже понадобится именно букмекерская линия;
 - более сильный внешний news layer beyond deterministic signals.
 
 ### Фаза 2. Мониторинг изменений

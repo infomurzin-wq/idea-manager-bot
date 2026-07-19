@@ -83,6 +83,7 @@ class BoutSnapshot:
     fighter_b_moneyline_decimal: str = "n/a"
     over_1_5_decimal: str = "n/a"
     over_2_5_decimal: str = "n/a"
+    odds_source_note: str = ""
     fighter_a: FighterSnapshot | None = None
     fighter_b: FighterSnapshot | None = None
     bout_commentary_ru: str = ""
@@ -104,6 +105,7 @@ class BoutSnapshot:
             ),
             over_1_5_decimal=payload.get("over_1_5_decimal", "n/a"),
             over_2_5_decimal=payload.get("over_2_5_decimal", "n/a"),
+            odds_source_note=payload.get("odds_source_note", ""),
             fighter_a=(
                 FighterSnapshot.from_dict(payload["fighter_a"])
                 if payload.get("fighter_a")
