@@ -308,7 +308,11 @@ def _handle_railway_cron(args: argparse.Namespace) -> int:
     if (
         mode == "incremental"
         and result.status == "skipped"
-        and result.reason == "No active weekend monitoring window is open."
+        and result.reason
+        in {
+            "No active weekend monitoring window is open.",
+            "Active weekend monitoring window is no longer eligible for the nearest weekend.",
+        }
     ):
         result = run_monitoring_cycle(
             mode="baseline",

@@ -114,24 +114,34 @@ def _schedule_urls(reference_date: date) -> list[str]:
 
 
 def _list_core_api_events(reference_date: date) -> list[ScheduledEvent]:
-    index_url = f"{ESPN_UFC_CORE_EVENTS_URL}?dates={reference_date.year}"
-    try:
-        payload = json.loads(fetch_text(index_url, cache_namespace="espn_core_events"))
-    except Exception:
-        return []
-
+    year = reference_date.year
+    page = 1
     events: list[ScheduledEvent] = []
-    for item in payload.get("items", []):
-        ref = item.get("$ref")
-        if not isinstance(ref, str) or not ref:
-            continue
+    page_count = 1
+
+    while page <= page_count:
+        index_url = f"{ESPN_UFC_CORE_EVENTS_URL}?dates={year}&page={page}"
         try:
-            event_payload = json.loads(fetch_text(_https_url(ref), cache_namespace="espn_core_events"))
+            payload = json.loads(fetch_text(index_url, cache_namespace="espn_core_events"))
         except Exception:
-            continue
-        event = _core_event_from_payload(event_payload)
-        if event is not None:
-            events.append(event)
+            break
+
+        if page == 1:
+            page_count = int(payload.get("pageCount", 1) or 1)
+
+        for item in payload.get("items", []):
+            ref = item.get("$ref")
+            if not isinstance(ref, str) or not ref:
+                continue
+            try:
+                event_payload = json.loads(fetch_text(_https_url(ref), cache_namespace="espn_core_events"))
+            except Exception:
+                continue
+            event = _core_event_from_payload(event_payload)
+            if event is not None:
+                events.append(event)
+        page += 1
+
     return events
 
 
