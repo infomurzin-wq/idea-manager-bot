@@ -10,7 +10,7 @@ from .diffing import render_incremental_diff
 from .normalize import compute_content_hash, report_payload_for_meaningful_hash
 from .rendering import render_report
 from .sources.espn import build_report_from_event_url
-from .sources.espn_schedule import find_nearest_weekend_event, next_weekend_dates
+from .sources.espn_schedule import ScheduledEvent, find_nearest_weekend_event, next_weekend_dates
 from .state_store import (
     clear_active_weekend_event,
     ensure_runtime_dirs,
@@ -66,6 +66,26 @@ def run_monitoring_cycle(
 
 def _run_baseline(*, current_date: date, send: str, weekend_only: bool) -> MonitoringResult:
     eligible_event = find_nearest_weekend_event(current_date) if weekend_only else None
+    used_active_fallback = False
+
+    if weekend_only and eligible_event is None:
+        fallback_event = load_active_weekend_event()
+        if fallback_event and _event_is_in_weekend_window(
+            current_date=current_date,
+            event_date=fallback_event.get("event_date", ""),
+        ):
+            fallback_event_url = str(fallback_event.get("event_url", "")).strip()
+            fallback_event_date = str(fallback_event.get("event_date", "")).strip()
+            if fallback_event_url:
+                eligible_event = ScheduledEvent(
+                    event_date=fallback_event_date,
+                    event_name=str(fallback_event.get("event_name", fallback_event.get("event_slug", ""))),
+                    event_url=fallback_event_url,
+                    event_time="n/a",
+                    broadcast="n/a",
+                    location="n/a",
+                )
+                used_active_fallback = True
     if weekend_only and not eligible_event:
         clear_active_weekend_event()
         return MonitoringResult(
@@ -103,7 +123,11 @@ def _run_baseline(*, current_date: date, send: str, weekend_only: bool) -> Monit
     return MonitoringResult(
         status="baseline_created",
         mode="baseline",
-        reason="Weekend UFC event detected and baseline snapshot created.",
+        reason=(
+            "Active weekend event fallback used after schedule lookup failure."
+            if used_active_fallback
+            else "Weekend UFC event detected and baseline snapshot created."
+        ),
         event_slug=report.event.event_slug,
         event_date=report.event.event_date,
         event_url=report.event.event_url,
@@ -200,10 +224,17 @@ def _persist_incremental_diff(*, previous_report: ReportSnapshot | None, report:
     return write_rendered_markdown(report.event.event_slug, markdown, "incremental-changes.md")
 
 
-def _event_is_still_in_weekend_window(*, current_date: date, event_date: str) -> bool:
-    target_date = date.fromisoformat(event_date)
+def _event_is_in_weekend_window(*, current_date: date, event_date: str) -> bool:
+    try:
+        target_date = date.fromisoformat(event_date)
+    except (TypeError, ValueError):
+        return False
     saturday, sunday = next_weekend_dates(current_date)
     return target_date in {saturday, sunday}
+
+
+def _event_is_still_in_weekend_window(*, current_date: date, event_date: str) -> bool:
+    return _event_is_in_weekend_window(current_date=current_date, event_date=event_date)
 
 
 def _now_iso() -> str:
