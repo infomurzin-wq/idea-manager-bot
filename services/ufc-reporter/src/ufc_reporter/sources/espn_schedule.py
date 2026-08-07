@@ -27,16 +27,19 @@ class ScheduledEvent:
 def list_scheduled_events(reference_date: date) -> list[ScheduledEvent]:
     events: list[ScheduledEvent] = []
     seen_urls: set[str] = set()
+    saturday, sunday = next_weekend_dates(reference_date)
+    target_years = {reference_date.year, saturday.year, sunday.year}
 
-    for event in _list_core_api_events(reference_date):
-        if not is_supported_ufc_event_name(event.event_name):
-            continue
-        if event.event_url in seen_urls:
-            continue
-        seen_urls.add(event.event_url)
-        events.append(event)
+    for year in sorted(target_years):
+        for event in _list_core_api_events(year=year):
+            if not is_supported_ufc_event_name(event.event_name):
+                continue
+            if event.event_url in seen_urls:
+                continue
+            seen_urls.add(event.event_url)
+            events.append(event)
 
-    for schedule_url in _schedule_urls(reference_date):
+    for schedule_url in _schedule_urls(target_years):
         try:
             page_html = fetch_text(schedule_url, cache_namespace="espn_schedule")
         except Exception:
@@ -104,17 +107,21 @@ def is_supported_ufc_event_name(event_name: str) -> bool:
     return re.match(r"^ufc\s+\d+\b", normalized) is not None
 
 
-def _schedule_urls(reference_date: date) -> list[str]:
-    year = reference_date.year
+def _schedule_urls(years: set[int]) -> list[str]:
     return [
-        f"https://www.espn.com/mma/schedule/_/year/{year}/league/ufc",
-        f"https://www.espn.com/mma/schedule/_/league/ufc/year/{year}",
+        *[
+            f"https://www.espn.com/mma/schedule/_/year/{year}/league/ufc"
+            for year in sorted(years)
+        ],
+        *[
+            f"https://www.espn.com/mma/schedule/_/league/ufc/year/{year}"
+            for year in sorted(years)
+        ],
         ESPN_UFC_SCHEDULE_URL,
     ]
 
 
-def _list_core_api_events(reference_date: date) -> list[ScheduledEvent]:
-    year = reference_date.year
+def _list_core_api_events(*, year: int) -> list[ScheduledEvent]:
     page = 1
     events: list[ScheduledEvent] = []
     page_count = 1
@@ -124,10 +131,12 @@ def _list_core_api_events(reference_date: date) -> list[ScheduledEvent]:
         try:
             payload = json.loads(fetch_text(index_url, cache_namespace="espn_core_events"))
         except Exception:
-            break
+            page += 1
+            continue
 
         if page == 1:
-            page_count = int(payload.get("pageCount", 1) or 1)
+            raw_page_count = payload.get("pageCount")
+            page_count = _to_positive_int(raw_page_count, 1)
 
         for item in payload.get("items", []):
             ref = item.get("$ref")
@@ -143,6 +152,16 @@ def _list_core_api_events(reference_date: date) -> list[ScheduledEvent]:
         page += 1
 
     return events
+
+
+def _to_positive_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < 1:
+        return 1
+    return parsed
 
 
 def _core_event_from_payload(payload: dict[str, object]) -> ScheduledEvent | None:
