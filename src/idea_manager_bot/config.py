@@ -22,6 +22,10 @@ class Settings:
     github_sync_base_path: str
     t_invest_token: str | None
     t_invest_account_id: str | None
+    pma_ops_api_base: str | None = None
+    pma_ops_hmac_secret: str | None = None
+    pma_operator_user_id: int | None = None
+    pma_operator_chat_id: int | None = None
 
 
 def load_settings() -> Settings:
@@ -54,4 +58,17 @@ def load_settings() -> Settings:
         github_sync_base_path=os.getenv("GITHUB_SYNC_BASE_PATH", "").strip(),
         t_invest_token=os.getenv("T_INVEST_TOKEN") or None,
         t_invest_account_id=os.getenv("T_INVEST_ACCOUNT_ID") or None,
+        pma_ops_api_base=os.getenv("PMA_OPS_API_BASE") or None,
+        pma_ops_hmac_secret=os.getenv("PMA_OPS_HMAC_SECRET") or None,
+        pma_operator_user_id=_optional_int(os.getenv("PMA_OPERATOR_USER_ID")),
+        pma_operator_chat_id=_optional_int(os.getenv("PMA_OPERATOR_CHAT_ID")),
     )
+
+
+def _optional_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value.strip())
+    except ValueError as exc:
+        raise RuntimeError("Expected numeric Telegram operator id") from exc

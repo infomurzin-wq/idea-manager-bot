@@ -42,6 +42,7 @@ from idea_manager_bot.exporter import SyncExporter
 from idea_manager_bot.link_reader import LinkReader
 from idea_manager_bot.llm import LLMService
 from idea_manager_bot.project_registry import build_project_registry
+from idea_manager_bot.pma_ops_bridge import PmaOpsBridge
 from idea_manager_bot.storage import IdeaStorage
 from idea_manager_bot.t_invest import TInvestClient
 from idea_manager_bot.ufc_reports_bridge import UfcReportsBridge
@@ -60,6 +61,7 @@ MENU_LIST_CONTEXT = "📚 Список контекста"
 MENU_BONDS = "📡 Облигации"
 MENU_DISCOUNT = "🛒 Дисконт Радар"
 MENU_UFC = "🥊 UFC"
+MENU_PMA = "🛡 PMA"
 MENU_PROJECTS = "🧭 Разделы"
 MENU_CANCEL = "❌ Отмена"
 
@@ -71,6 +73,7 @@ MENU_PLAIN_LABELS = {
     MENU_BONDS: "Облигации",
     MENU_DISCOUNT: "Дисконт Радар",
     MENU_UFC: "UFC",
+    MENU_PMA: "PMA",
     MENU_PROJECTS: "Разделы",
     MENU_CANCEL: "Отмена",
 }
@@ -113,6 +116,10 @@ class IdeaManagerApp:
         self.discount_radar = DiscountRadarBridge.from_data_dir(settings.bot_data_dir)
         self.ufc_reports = UfcReportsBridge()
         self.t_invest = TInvestClient(settings.t_invest_token)
+        self.pma_ops = PmaOpsBridge(
+            settings.pma_ops_api_base,
+            settings.pma_ops_hmac_secret,
+        )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self._reset_flow(context)
@@ -136,7 +143,8 @@ class IdeaManagerApp:
             f"`{MENU_LIST_CONTEXT}`: открыть список контекста кнопками.\n"
             f"`{MENU_BONDS}`: открыть Bond Radar.\n"
             f"`{MENU_DISCOUNT}`: открыть Дисконт Радар.\n"
-            f"`{MENU_UFC}`: открыть UFC-отчёты.",
+            f"`{MENU_UFC}`: открыть UFC-отчёты.\n"
+            f"`{MENU_PMA}`: открыть диагностику и восстановление PMA.",
             parse_mode="Markdown",
             reply_markup=self._main_menu(),
         )
@@ -155,6 +163,18 @@ class IdeaManagerApp:
         if not update.message:
             return
         await self._send_ufc_screen(update.message, "ufc:home")
+
+    async def pma_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        if not self._pma_authorized(update):
+            await update.message.reply_text("Доступ к PMA запрещён.")
+            return
+        await self._send_pma_screen(
+            update.message,
+            "pma:home",
+            update.effective_user.id,
+        )
 
     async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
@@ -272,6 +292,17 @@ class IdeaManagerApp:
 
         if menu_text_matches(text, MENU_UFC):
             await self._send_ufc_screen(update.message, "ufc:home")
+            return
+
+        if menu_text_matches(text, MENU_PMA):
+            if not self._pma_authorized(update):
+                await update.message.reply_text("Доступ к PMA запрещён.")
+                return
+            await self._send_pma_screen(
+                update.message,
+                "pma:home",
+                update.effective_user.id,
+            )
             return
 
         if menu_text_matches(text, MENU_PROJECTS):
@@ -412,6 +443,17 @@ class IdeaManagerApp:
 
         if data.startswith("ufc:"):
             await self._send_ufc_screen(query.message, data)
+            return
+
+        if data.startswith("pma:"):
+            if not self._pma_authorized(update):
+                await query.message.reply_text("Доступ к PMA запрещён.")
+                return
+            await self._send_pma_screen(
+                query.message,
+                data,
+                update.effective_user.id,
+            )
             return
 
         if ":" not in data:
@@ -1293,6 +1335,17 @@ class IdeaManagerApp:
             reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
         )
 
+    async def _send_pma_screen(self, message: Message, action: str, user_id: int) -> None:
+        screen = await asyncio.to_thread(
+            self.pma_ops.handle_action,
+            action,
+            actor_id=user_id,
+        )
+        await message.reply_text(
+            screen["text"][:4000],
+            reply_markup=self.pma_ops.inline_keyboard(screen.get("buttons", [])),
+        )
+
     async def _handle_discount_input(
         self,
         update: Update,
@@ -1476,11 +1529,25 @@ class IdeaManagerApp:
                 [KeyboardButton(MENU_NEW_IDEA), KeyboardButton(MENU_NEW_CONTEXT)],
                 [KeyboardButton(MENU_LIST_IDEAS), KeyboardButton(MENU_LIST_CONTEXT)],
                 [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_DISCOUNT)],
-                [KeyboardButton(MENU_UFC), KeyboardButton(MENU_PROJECTS)],
+                [KeyboardButton(MENU_UFC), KeyboardButton(MENU_PMA)],
+                [KeyboardButton(MENU_PROJECTS)],
             ],
             resize_keyboard=True,
             one_time_keyboard=True,
             is_persistent=False,
+        )
+
+    def _pma_authorized(self, update: Update) -> bool:
+        user = update.effective_user
+        chat = update.effective_chat
+        return bool(
+            user
+            and chat
+            and self.settings.pma_operator_user_id is not None
+            and self.settings.pma_operator_chat_id is not None
+            and user.id == self.settings.pma_operator_user_id
+            and chat.id == self.settings.pma_operator_chat_id
+            and chat.type == "private"
         )
 
     @staticmethod
@@ -1512,6 +1579,7 @@ async def post_init(application: Application) -> None:
         BotCommand("bonds", "Открыть Bond Radar"),
         BotCommand("discount", "Открыть Дисконт Радар"),
         BotCommand("ufc", "Открыть UFC отчёты"),
+        BotCommand("pma", "Диагностика и восстановление PMA"),
         BotCommand("projects", "Список разделов"),
         BotCommand("list", "Список идей"),
         BotCommand("show", "Показать идею по ID"),
@@ -1531,6 +1599,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("bonds", app_logic.bonds_command))
     application.add_handler(CommandHandler("discount", app_logic.discount_command))
     application.add_handler(CommandHandler("ufc", app_logic.ufc_command))
+    application.add_handler(CommandHandler("pma", app_logic.pma_command))
     application.add_handler(CommandHandler("projects", app_logic.projects_command))
     application.add_handler(CommandHandler("list", app_logic.list_command))
     application.add_handler(CommandHandler("show", app_logic.show_command))
