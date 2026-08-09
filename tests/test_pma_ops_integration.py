@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import time
 import unittest
 from types import SimpleNamespace
@@ -140,6 +141,10 @@ class PmaOpsBridgeTests(unittest.TestCase):
 
 
 class IdeaManagerPmaMenuTests(unittest.TestCase):
+    def test_http_clients_do_not_log_telegram_urls_at_info(self) -> None:
+        self.assertGreaterEqual(logging.getLogger("httpx").level, logging.WARNING)
+        self.assertGreaterEqual(logging.getLogger("httpcore").level, logging.WARNING)
+
     def test_main_menu_contains_pma_section(self) -> None:
         labels = {
             button.text
