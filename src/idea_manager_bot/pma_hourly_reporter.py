@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from telegram.error import TelegramError
 from telegram.ext import Application
 
 
@@ -132,7 +133,7 @@ class PmaHourlyReporter:
                         )
                         self._save_key(key, sent=True)
                         known_key = key
-                except (httpx.HTTPError, ValueError, OSError):
+                except (httpx.HTTPError, TelegramError, ValueError, OSError):
                     pass
                 await asyncio.sleep(self.poll_seconds)
 
