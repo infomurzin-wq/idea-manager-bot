@@ -43,6 +43,7 @@ from idea_manager_bot.link_reader import LinkReader
 from idea_manager_bot.llm import LLMService
 from idea_manager_bot.project_registry import build_project_registry
 from idea_manager_bot.pma_ops_bridge import PmaOpsBridge
+from idea_manager_bot.pma_hourly_reporter import start_pma_hourly_reporter
 from idea_manager_bot.storage import IdeaStorage
 from idea_manager_bot.t_invest import TInvestClient
 from idea_manager_bot.ufc_reports_bridge import UfcReportsBridge
@@ -1588,6 +1589,7 @@ async def post_init(application: Application) -> None:
         BotCommand("comment", "Добавить комментарий к идее"),
     ]
     await application.bot.set_my_commands(commands)
+    start_pma_hourly_reporter(application)
 
 
 def build_application(settings: Settings) -> Application:
