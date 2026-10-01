@@ -1,8 +1,11 @@
 import json
 import unittest
-from unittest.mock import patch
+from datetime import date
+from pathlib import Path
+from unittest.mock import Mock, patch
 
-from ufc_reporter.models import BoutSnapshot, EventSnapshot
+from ufc_reporter import monitoring
+from ufc_reporter.models import BoutSnapshot, EventSnapshot, ReportSnapshot
 from ufc_reporter.sources import espn, ufc_official
 
 
@@ -80,6 +83,30 @@ class CardSafetyTests(unittest.TestCase):
                 official_profile_url="https://www.ufc.com/athlete/anthony-romero-0",
             )
         self.assertIn("/5454993?", build.call_args.args[0]["athlete"]["$ref"])
+
+    def test_incremental_replaces_incomplete_previous_report(self):
+        report = ReportSnapshot(event=event(), generated_at="now", report_version="test", content_hash="new")
+        old_report = ReportSnapshot(event=event(), generated_at="old", report_version="test", content_hash="old")
+        send = Mock()
+        update = Mock()
+        with patch.multiple(
+            monitoring,
+            load_active_weekend_event=Mock(return_value={"event_date": "2026-10-03", "event_url": "event-url"}),
+            _event_is_still_in_weekend_window=Mock(return_value=True),
+            build_report_from_event_url=Mock(return_value=report),
+            load_last_sent_report=Mock(return_value={"last_meaningful_hash": "old"}),
+            load_sent_snapshot=Mock(return_value=old_report),
+            _persist_report=Mock(return_value=(Path("snapshot.json"), Path("report.md"))),
+            _meaningful_hash=Mock(return_value="new"),
+            _send_if_requested=send,
+            update_sent_report_state=update,
+        ):
+            result = monitoring._run_incremental(
+                current_date=date(2026, 10, 2), send="telegram", weekend_only=True
+            )
+        self.assertEqual(result.status, "corrected")
+        self.assertEqual(send.call_args.kwargs["report_kind"], "corrected")
+        self.assertEqual(update.call_args.kwargs["report_kind"], "corrected")
 
 
 if __name__ == "__main__":

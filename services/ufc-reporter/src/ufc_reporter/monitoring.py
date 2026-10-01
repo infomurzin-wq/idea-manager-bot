@@ -163,6 +163,37 @@ def _run_incremental(*, current_date: date, send: str, weekend_only: bool) -> Mo
     previous_report = load_sent_snapshot(previous_entry)
     snapshot_path, markdown_path = _persist_report(report)
     meaningful_hash = _meaningful_hash(report)
+    if previous_report and any(
+        fighter is None or not fighter.last_five
+        for bout in previous_report.event.bouts
+        for fighter in (bout.fighter_a, bout.fighter_b)
+    ):
+        _send_if_requested(
+            send=send,
+            report=report,
+            markdown_path=markdown_path,
+            snapshot_path=snapshot_path,
+            report_kind="corrected",
+        )
+        update_sent_report_state(
+            event_slug=report.event.event_slug,
+            report=report,
+            meaningful_hash=meaningful_hash,
+            report_kind="corrected",
+            markdown_path=markdown_path,
+            send_target=send,
+        )
+        return MonitoringResult(
+            status="corrected",
+            mode="incremental",
+            reason="Previous report lacked fighter histories; complete corrected report sent.",
+            event_slug=report.event.event_slug,
+            event_date=report.event.event_date,
+            event_url=report.event.event_url,
+            snapshot_path=str(snapshot_path),
+            markdown_path=str(markdown_path),
+            changed=True,
+        )
     previous_hash = (
         previous_entry.get("last_meaningful_hash")
         if previous_entry
