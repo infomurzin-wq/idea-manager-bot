@@ -8,6 +8,7 @@ import re
 import time
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote_plus
 
 from lxml import html as lxml_html
 
@@ -27,6 +28,8 @@ from .signals import build_pre_fight_signals
 from .ufc_official import enrich_event_with_fallback_card
 
 ESPN_CORE_EVENT_URL = "https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/events/{event_id}?lang=en&region=us"
+ESPN_SEARCH_URL = "https://site.api.espn.com/apis/search/v2?query={name}"
+ESPN_CORE_ATHLETE_URL = "https://sports.core.api.espn.com/v2/sports/mma/athletes/{athlete_id}?lang=en&region=us"
 CORE_FALLBACK_HISTORY_LIMIT = int(os.environ.get("UFC_REPORTER_CORE_HISTORY_LIMIT", "5"))
 CORE_FALLBACK_WORKERS = max(1, int(os.environ.get("UFC_REPORTER_CORE_WORKERS", "8")))
 
@@ -41,6 +44,23 @@ def build_report_from_event_url(event_url: str) -> ReportSnapshot:
         event = build_event_snapshot_from_core_api(event_url)
         report_version = "Stage 2 ESPN Core API Fallback"
     event = enrich_event_with_fallback_card(event)
+    if not event.bouts:
+        raise ValueError("Report not sent: event card is empty")
+    missing_history = [
+        name
+        for bout in event.bouts
+        for name, fighter in (
+            (bout.fighter_a_name, bout.fighter_a),
+            (bout.fighter_b_name, bout.fighter_b),
+        )
+        if fighter is None or not fighter.last_five
+    ]
+    if missing_history:
+        raise ValueError(
+            "Report not sent: missing fight history for " + ", ".join(
+                sorted(set(missing_history))
+            )
+        )
     event = enrich_event_with_opening_odds(event)
     event = enrich_event_with_totals(event)
     report = ReportSnapshot(
@@ -476,6 +496,65 @@ def build_fighter_from_core_competitor(
         pre_fight_signals=pre_fight_signals,
         data_quality="partial",
     )
+
+
+def find_fighter_from_core_search(
+    name: str, *, event_weight_class: str, event_date: str, official_profile_url: str = ""
+) -> FighterSnapshot | None:
+    try:
+        payload = json.loads(
+            fetch_text(
+                ESPN_SEARCH_URL.format(name=quote_plus(name)),
+                cache_namespace="espn-search",
+                user_agent="curl/8.0",
+            )
+        )
+    except Exception:
+        return None
+    candidates: list[tuple[str, str]] = []
+    for group in payload.get("results", []):
+        if group.get("type") != "player":
+            continue
+        for player in group.get("contents", []):
+            if player.get("sport") != "mma" or slugify(str(player.get("displayName") or "")) != slugify(name):
+                continue
+            link = player.get("link") or {}
+            match = re.search(r"/mma/fighter/_/id/(\d+)", str(link.get("web") or ""))
+            if not match:
+                continue
+            athlete_id = match.group(1)
+            athlete_url = ESPN_CORE_ATHLETE_URL.format(athlete_id=athlete_id)
+            try:
+                athlete_payload = _fetch_core_json(athlete_url)
+            except Exception:
+                continue
+            candidates.append((athlete_url, str(athlete_payload.get("nickname") or "")))
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        athlete_url = candidates[0][0]
+    else:
+        if not official_profile_url.startswith("https://www.ufc.com/athlete/"):
+            return None
+        try:
+            profile = fetch_text(official_profile_url, cache_namespace="ufc_official")
+            nickname = " ".join(
+                lxml_html.fromstring(profile).xpath("//p[contains(@class, 'hero-profile__nickname')]/text()")
+            ).strip().strip('"')
+        except Exception:
+            return None
+        matching = [url for url, candidate_nickname in candidates if nickname and slugify(candidate_nickname) == slugify(nickname)]
+        if len(matching) != 1:
+            return None
+        athlete_url = matching[0]
+    try:
+        return build_fighter_from_core_competitor(
+            {"athlete": {"$ref": athlete_url}},
+            event_weight_class=event_weight_class,
+            event_date=event_date,
+        )
+    except Exception:
+        return None
 
 
 def build_last_five_from_core_eventlog(

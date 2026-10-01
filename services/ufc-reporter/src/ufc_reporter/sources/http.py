@@ -9,17 +9,21 @@ from ..config import get_paths
 from ..normalize import slugify
 
 
-def fetch_text(url: str, *, timeout: int = 30, cache_namespace: str = "http") -> str:
+def fetch_text(
+    url: str,
+    *,
+    timeout: int = 30,
+    cache_namespace: str = "http",
+    user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+) -> str:
     cache_path = _cache_path(url, cache_namespace)
     request = urllib.request.Request(
         url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            )
-        },
+        headers={"User-Agent": user_agent},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:

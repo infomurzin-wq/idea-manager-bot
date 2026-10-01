@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from lxml import html as lxml_html
 
 from ..models import BoutSnapshot, EventSnapshot, FighterSnapshot
@@ -25,6 +27,16 @@ def enrich_event_with_fallback_card(event: EventSnapshot) -> EventSnapshot:
         )
         return event
 
+    overlap = sum(
+        _find_existing_bout_index(bout, event.bouts, set()) is not None
+        for bout in fallback_bouts
+    )
+    if overlap * 2 <= min(len(fallback_bouts), len(event.bouts)):
+        event.quality_notes.append(
+            "Fallback card: UFC.com card не совпадает с боями ESPN; запасная карточка отклонена."
+        )
+        return event
+
     matched = 0
     added = 0
     existing = list(event.bouts)
@@ -34,7 +46,7 @@ def enrich_event_with_fallback_card(event: EventSnapshot) -> EventSnapshot:
     for fallback in fallback_bouts:
         match_index = _find_existing_bout_index(fallback, existing, used_existing)
         if match_index is None:
-            merged.append(_build_placeholder_bout(fallback, event_url))
+            merged.append(_build_placeholder_bout(fallback, event_url, event.event_date, page_html))
             added += 1
             continue
         used_existing.add(match_index)
@@ -69,45 +81,30 @@ def enrich_event_with_fallback_card(event: EventSnapshot) -> EventSnapshot:
 
 def discover_event_url(event: EventSnapshot) -> str | None:
     index_html = fetch_text(UFC_EVENTS_INDEX_URL, cache_namespace="ufc_official")
-    candidates: list[tuple[int, str]] = []
     if not event.bouts:
         return None
+    links = lxml_html.fromstring(index_html).xpath("//a[starts-with(@href, '/event/')]")
+    number = re.match(r"UFC (\d+)\b", event.event_name, re.IGNORECASE)
+    if number:
+        exact_path = f"/event/ufc-{number.group(1)}"
+        for link in links:
+            if link.get("href", "").rstrip("/") == exact_path:
+                return f"https://www.ufc.com{exact_path}"
+
     main_fight = event.bouts[0]
     a_last = last_name(main_fight.fighter_a_name)
     b_last = last_name(main_fight.fighter_b_name)
-    for match in lxml_html.fromstring(index_html).xpath("//a[starts-with(@href, '/event/')]"):
+    candidates: list[tuple[int, str]] = []
+    for match in links:
         href = match.get("href", "").strip()
         if not href:
             continue
         snippet = " ".join(match.itertext())
-        window = snippet.lower()
-        score = 0
-        if a_last in slugify(window):
-            score += 5
-        if b_last in slugify(window):
-            score += 5
-        if event.event_date.split("-")[2] in href:
-            score += 1
-        if event.event_date.split("-")[0] in href:
-            score += 1
-        if score:
-            candidates.append((score, href))
-    if not candidates:
-        raw = index_html.lower()
-        for href in set(lxml_html.fromstring(index_html).xpath("//a[starts-with(@href, '/event/')]/@href")):
-            snippet_index = raw.find(href.lower())
-            if snippet_index == -1:
-                continue
-            window = raw[max(0, snippet_index - 5000) : snippet_index + 5000]
-            score = 0
-            if a_last in slugify(window):
-                score += 5
-            if b_last in slugify(window):
-                score += 5
-            if event.event_date.replace("-", "")[:6] in window.replace("-", ""):
-                score += 1
-            if score:
-                candidates.append((score, href))
+        tokens = set(slugify(f"{snippet} {href}").split("-"))
+        if a_last not in tokens or b_last not in tokens:
+            continue
+        score = int(event.event_date[-2:] in href) + int(event.event_date[:4] in href)
+        candidates.append((score, href))
     if not candidates:
         return None
     candidates.sort(key=lambda item: item[0], reverse=True)
@@ -239,7 +236,32 @@ def _build_placeholder_fighter(name: str, source_url: str) -> FighterSnapshot:
     )
 
 
-def _build_placeholder_bout(fallback: BoutSnapshot, source_url: str) -> BoutSnapshot:
+def _official_athlete_url(page_html: str, bout_id: str, name: str) -> str:
+    document = lxml_html.fromstring(page_html)
+    for node in document.xpath("//div[@data-fmid=$bout_id]", bout_id=bout_id):
+        for link in node.xpath(".//a[contains(@href, '/athlete/')]"):
+            if slugify(link.text_content()) == slugify(name):
+                return str(link.get("href") or "")
+    return ""
+
+
+def _build_placeholder_bout(
+    fallback: BoutSnapshot, source_url: str, event_date: str, page_html: str
+) -> BoutSnapshot:
+    from .espn import find_fighter_from_core_search
+
+    fighter_a = find_fighter_from_core_search(
+        fallback.fighter_a_name,
+        event_weight_class=fallback.weight_class,
+        event_date=event_date,
+        official_profile_url=_official_athlete_url(page_html, fallback.bout_id, fallback.fighter_a_name),
+    ) or _build_placeholder_fighter(fallback.fighter_a_name, source_url)
+    fighter_b = find_fighter_from_core_search(
+        fallback.fighter_b_name,
+        event_weight_class=fallback.weight_class,
+        event_date=event_date,
+        official_profile_url=_official_athlete_url(page_html, fallback.bout_id, fallback.fighter_b_name),
+    ) or _build_placeholder_fighter(fallback.fighter_b_name, source_url)
     return BoutSnapshot(
         bout_id=fallback.bout_id,
         fighter_a_name=fallback.fighter_a_name,
@@ -247,7 +269,7 @@ def _build_placeholder_bout(fallback: BoutSnapshot, source_url: str) -> BoutSnap
         weight_class=fallback.weight_class,
         card_segment=fallback.card_segment,
         status="n/a",
-        fighter_a=fallback.fighter_a or _build_placeholder_fighter(fallback.fighter_a_name, source_url),
-        fighter_b=fallback.fighter_b or _build_placeholder_fighter(fallback.fighter_b_name, source_url),
+        fighter_a=fighter_a,
+        fighter_b=fighter_b,
         bout_commentary_ru="Бой подтянут из официальной карточки UFC как fallback, потому что ESPN event payload в текущем прогоне был неполным.",
     )
