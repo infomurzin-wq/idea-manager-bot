@@ -16,6 +16,7 @@ COPY docs /app/docs
 COPY services/ufc-reporter /app/services/ufc-reporter
 
 RUN pip install --upgrade pip && pip install .
+RUN python -c "import idea_manager_bot.radar_codex_bridge"
 
 RUN mkdir -p /app/data /app/workspace
 

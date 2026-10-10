@@ -41,6 +41,7 @@ from idea_manager_bot.discount_radar_bridge import DiscountRadarBridge
 from idea_manager_bot.exporter import SyncExporter
 from idea_manager_bot.link_reader import LinkReader
 from idea_manager_bot.llm import LLMService
+from idea_manager_bot.idea_radar import IdeaRadar
 from idea_manager_bot.project_registry import build_project_registry
 from idea_manager_bot.pma_ops_bridge import PmaOpsBridge
 from idea_manager_bot.pma_hourly_reporter import start_pma_hourly_reporter
@@ -65,6 +66,7 @@ MENU_BONDS = "📡 Облигации"
 MENU_DISCOUNT = "🛒 Дисконт Радар"
 MENU_UFC = "🥊 UFC"
 MENU_PMA = "🛡 PMA"
+MENU_RADAR = "🔭 Радар идей"
 MENU_PROJECTS = "🧭 Разделы"
 MENU_CANCEL = "❌ Отмена"
 
@@ -77,6 +79,7 @@ MENU_PLAIN_LABELS = {
     MENU_DISCOUNT: "Дисконт Радар",
     MENU_UFC: "UFC",
     MENU_PMA: "PMA",
+    MENU_RADAR: "Радар идей",
     MENU_PROJECTS: "Разделы",
     MENU_CANCEL: "Отмена",
 }
@@ -113,6 +116,7 @@ class IdeaManagerApp:
         self.registry = build_project_registry(settings.workspace_root)
         self.storage = IdeaStorage(settings.bot_data_dir)
         self.llm = LLMService(settings.openai_api_key, settings.openai_model)
+        self.idea_radar = IdeaRadar(settings, self.llm)
         self.link_reader = LinkReader()
         self.exporter = SyncExporter(settings)
         self.bond_radar = BondRadarBridge.from_workspace(settings.workspace_root)
@@ -247,6 +251,14 @@ class IdeaManagerApp:
             return
 
         text = update.message.text.strip()
+        if text.lower() in menu_text_variants():
+            context.user_data.pop("radar_card", None)
+            if self.idea_radar.authorized(update):
+                self.idea_radar.store.setting("active_card", "")
+        if menu_text_matches(text, MENU_RADAR):
+            self._reset_flow(context)
+            await self.idea_radar.home(update, context)
+            return
         if menu_text_matches(text, MENU_NEW_IDEA):
             context.user_data["pending_action"] = "idea"
             await update.message.reply_text(
@@ -326,6 +338,12 @@ class IdeaManagerApp:
         await query.answer()
 
         data = query.data or ""
+        if data.startswith("radar:"):
+            await self.idea_radar.callback(update, context)
+            return
+        context.user_data.pop("radar_card", None)
+        if self.idea_radar.authorized(update):
+            self.idea_radar.store.setting("active_card", "")
         if data == "main:home":
             self._reset_flow(context)
             await query.message.reply_text("🏠 Главное меню.", reply_markup=self._main_menu())
@@ -528,6 +546,8 @@ class IdeaManagerApp:
         if not update.message:
             return
 
+        if await self.idea_radar.handle_text(update, context):
+            return
         pending_action = context.user_data.get("pending_action")
         if pending_action not in {
             "idea",
@@ -1533,6 +1553,7 @@ class IdeaManagerApp:
                 [KeyboardButton(MENU_LIST_IDEAS), KeyboardButton(MENU_LIST_CONTEXT)],
                 [KeyboardButton(MENU_BONDS), KeyboardButton(MENU_DISCOUNT)],
                 [KeyboardButton(MENU_UFC), KeyboardButton(MENU_PMA)],
+                [KeyboardButton(MENU_RADAR)],
                 [KeyboardButton(MENU_PROJECTS)],
             ],
             resize_keyboard=True,
@@ -1555,6 +1576,7 @@ class IdeaManagerApp:
 
     @staticmethod
     def _reset_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
+        context.user_data.pop("radar_card", None)
         context.user_data.pop("pending_action", None)
         context.user_data.pop("pending_project", None)
         context.user_data.pop("pending_idea_id", None)
@@ -1579,6 +1601,7 @@ async def post_init(application: Application) -> None:
         BotCommand("menu", "Открыть меню"),
         BotCommand("help", "Подсказка"),
         BotCommand("myid", "Показать chat_id"),
+        BotCommand("radar", "Радар новых идей"),
         BotCommand("bonds", "Открыть Bond Radar"),
         BotCommand("discount", "Открыть Дисконт Радар"),
         BotCommand("ufc", "Открыть UFC отчёты"),
@@ -1590,12 +1613,20 @@ async def post_init(application: Application) -> None:
     ]
     await application.bot.set_my_commands(commands)
     start_pma_hourly_reporter(application)
+    application.bot_data["idea_radar"].start(application.bot)
+
+
+async def post_stop(application: Application) -> None:
+    await application.bot_data["idea_radar"].stop()
 
 
 def build_application(settings: Settings) -> Application:
     app_logic = IdeaManagerApp(settings)
-    application = ApplicationBuilder().token(settings.telegram_bot_token).post_init(post_init).build()
+    application = ApplicationBuilder().token(settings.telegram_bot_token).post_init(post_init).post_stop(post_stop).build()
+    application.bot_data["idea_radar"] = app_logic.idea_radar
 
+    application.add_handler(MessageHandler(filters.COMMAND, app_logic.idea_radar.leave_on_command), group=-1)
+    application.add_handler(CommandHandler("radar", app_logic.idea_radar.home))
     application.add_handler(CommandHandler("start", app_logic.start))
     application.add_handler(CommandHandler("menu", app_logic.menu_command))
     application.add_handler(CommandHandler("help", app_logic.help_command))
