@@ -12,16 +12,27 @@ from types import SimpleNamespace
 from telegram import Bot
 
 from idea_manager_bot.config import load_settings
-from idea_manager_bot.idea_radar import IdeaRadar, MSK, current_slot
+from idea_manager_bot.idea_radar import IdeaRadar, MSK
 from idea_manager_bot.idea_research import CONTEXT, SOURCES, public_url, validate_card
 
 HOURS = (11, 16, 21)
+RESEARCH_LEAD = timedelta(hours=3)
+PUBLISH_GRACE = timedelta(hours=1)
+
+
+def codex_slot(now: datetime) -> datetime | None:
+    now = now.astimezone(MSK)
+    for hour in HOURS:
+        slot = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if -RESEARCH_LEAD <= now - slot < PUBLISH_GRACE:
+            return slot
+    return None
 
 
 def context(radar: IdeaRadar, now: datetime) -> dict:
     if radar.enabled or radar.source != "codex":
         raise ValueError("Codex mode is not active on Railway")
-    slot = current_slot(now)
+    slot = codex_slot(now)
     if slot is None:
         raise ValueError("Outside a scheduled radar window")
     memory = radar.store.memory()
@@ -41,7 +52,7 @@ def validate_submission(data: dict, now: datetime) -> tuple[datetime, dict]:
     slot = datetime.fromisoformat(data["slot"])
     if slot.tzinfo is None or slot.utcoffset() != timedelta(hours=3) or slot.hour not in HOURS or any((slot.minute, slot.second, slot.microsecond)):
         raise ValueError("Invalid Moscow slot")
-    if not -timedelta(minutes=20) <= now.astimezone(MSK) - slot <= timedelta(hours=1):
+    if not -RESEARCH_LEAD <= now.astimezone(MSK) - slot < PUBLISH_GRACE:
         raise ValueError("Stale or future slot")
     reason = data.get("reason")
     if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 1000:
