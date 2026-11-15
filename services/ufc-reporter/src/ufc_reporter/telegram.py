@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import secrets
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,7 @@ from .config import get_paths
 from .models import ReportSnapshot
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,44 @@ def send_report_delivery(
         filename=f"{report.event.event_date}-{report.event.event_slug}-{report_kind}.md",
     )
     send_snapshot_document(config, report=report, snapshot_path=snapshot_path)
+    if report_kind == "baseline":
+        try:
+            from .polymarket_singles import discover_singles
+
+            singles = discover_singles(report.event)
+            lines = [
+                f"🥊 Ординары Polymarket · {report.event.event_name}",
+                "Коэффициенты от 1,70, ориентир по лучшему ask стакана; без учёта глубины и комиссии.",
+                "Выбор и статистика: 🥊 UFC → Ординары Polymarket.",
+                "",
+            ]
+            lines.extend(
+                f"{item['bout']} · {item['question']} · {item['outcome']} · {item['decimal']}"
+                for item in singles
+            )
+            if not singles:
+                lines.append("Подходящих исходов со стаканом сейчас нет.")
+            chunk = ""
+            for line in lines:
+                if len(chunk) + len(line) + 1 > 3500:
+                    send_message(config, chunk)
+                    chunk = ""
+                chunk += line + "\n"
+            if chunk:
+                send_message(config, chunk)
+            catalogue_path = get_paths().runtime_reports_dir / report.event.event_slug / "polymarket-singles.json"
+            catalogue_path.write_text(
+                json.dumps({"event": asdict(report.event), "singles": singles}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            send_document(
+                config,
+                document_path=catalogue_path,
+                caption="Открыть тот же четверговый список в разделе Ординары Polymarket",
+                reply_markup={"inline_keyboard": [[{"text": "📈 Открыть ординары", "callback_data": "ufc:poly:import"}]]},
+            )
+        except Exception:
+            LOGGER.exception("Could not send Polymarket singles list; UFC report was delivered")
 
 
 def send_update_delivery(
@@ -146,6 +187,7 @@ def send_document(
     document_path: Path,
     caption: str,
     filename: str | None = None,
+    reply_markup: dict | None = None,
 ) -> dict[str, Any]:
     if not document_path.exists():
         raise FileNotFoundError(f"Telegram document not found: {document_path}")
@@ -153,6 +195,8 @@ def send_document(
         "chat_id": config.chat_id,
         "caption": caption,
     }
+    if reply_markup:
+        fields["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
     files = {
         "document": (
             filename or document_path.name,

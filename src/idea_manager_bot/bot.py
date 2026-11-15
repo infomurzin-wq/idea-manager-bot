@@ -48,6 +48,7 @@ from idea_manager_bot.pma_hourly_reporter import start_pma_hourly_reporter
 from idea_manager_bot.storage import IdeaStorage
 from idea_manager_bot.t_invest import TInvestClient
 from idea_manager_bot.ufc_reports_bridge import UfcReportsBridge
+from idea_manager_bot.ufc_polymarket import UfcPolymarket
 
 
 logging.basicConfig(
@@ -122,6 +123,7 @@ class IdeaManagerApp:
         self.bond_radar = BondRadarBridge.from_workspace(settings.workspace_root)
         self.discount_radar = DiscountRadarBridge.from_data_dir(settings.bot_data_dir)
         self.ufc_reports = UfcReportsBridge()
+        self.ufc_polymarket = UfcPolymarket(settings.bot_data_dir)
         self.t_invest = TInvestClient(settings.t_invest_token)
         self.pma_ops = PmaOpsBridge(
             settings.pma_ops_api_base,
@@ -462,8 +464,33 @@ class IdeaManagerApp:
             )
             return
 
+        if data == "ufc:poly:import":
+            document = query.message.document
+            if not document or document.file_name != "polymarket-singles.json":
+                await query.message.reply_text("Файл четвергового списка не найден.")
+                return
+            try:
+                self.ufc_reports._ensure_ufc_reporter_path()
+                telegram_file = await context.bot.get_file(document.file_id)
+                raw = bytes(await telegram_file.download_as_bytearray())
+                screen = await asyncio.to_thread(
+                    self.ufc_polymarket.import_catalogue,
+                    raw,
+                    update.effective_user.id if update.effective_user else 0,
+                )
+            except Exception as exc:
+                await query.message.reply_text(f"Не удалось открыть список: {type(exc).__name__}: {exc}")
+                return
+            await query.message.reply_text(
+                screen["text"][:4000],
+                reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),
+            )
+            return
+
         if data.startswith("ufc:"):
-            await self._send_ufc_screen(query.message, data)
+            await self._send_ufc_screen(
+                query.message, data, update.effective_user.id if update.effective_user else 0
+            )
             return
 
         if data.startswith("pma:"):
@@ -1351,8 +1378,12 @@ class IdeaManagerApp:
             reply_markup=self.discount_radar.inline_keyboard(screen.get("buttons", [])),
         )
 
-    async def _send_ufc_screen(self, message: Message, action: str) -> None:
-        screen = await asyncio.to_thread(self.ufc_reports.handle_action, action)
+    async def _send_ufc_screen(self, message: Message, action: str, user_id: int = 0) -> None:
+        if action.startswith("ufc:poly"):
+            self.ufc_reports._ensure_ufc_reporter_path()
+            screen = await asyncio.to_thread(self.ufc_polymarket.handle_action, action, user_id)
+        else:
+            screen = await asyncio.to_thread(self.ufc_reports.handle_action, action)
         await message.reply_text(
             screen["text"][:4000],
             reply_markup=self.ufc_reports.inline_keyboard(screen.get("buttons", [])),

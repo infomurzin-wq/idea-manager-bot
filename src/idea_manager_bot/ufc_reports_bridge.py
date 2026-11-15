@@ -126,6 +126,7 @@ class UfcReportsBridge:
             ),
             "buttons": [
                 [{"text": "📋 Список отчётов", "callback_data": "ufc:list"}],
+                [{"text": "📈 Ординары Polymarket", "callback_data": "ufc:poly"}],
                 [{"text": "🚀 Запустить полный отчёт", "callback_data": "ufc:run-full"}],
                 [{"text": "🔎 Проверить изменения", "callback_data": "ufc:run-changes"}],
                 [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
