@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from typing import Iterator
 OPENING_BANK = Decimal("300000")
 STAKE = Decimal("10000")
 PAGE_SIZE = 10
+BOUT_PAGE_SIZE = 8
 
 
 def _rub(value: Decimal) -> str:
@@ -35,7 +37,7 @@ def _fighter_lines(fighter: object) -> list[str]:
     for fight in fighter.last_five:
         lines.append(
             f"• {fight.fight_date} · {fight.opponent} · {fight.result}, "
-            f"{fight.method}, R{fight.round} · {fight.promotion} · {fight.event_name}"
+            f"{fight.method}, R{fight.round}"
         )
     if not fighter.last_five:
         lines.append("Нет подтверждённой истории последних пяти выступлений.")
@@ -59,6 +61,34 @@ def _card(item: dict, bout: object) -> str:
         *_fighter_lines(bout.fighter_b),
     ]
     return "\n".join(lines)
+
+
+def _outcome_name(item: dict) -> str:
+    question = item["question"]
+    outcome = item["outcome"]
+    if outcome in item["bout"].split(" — "):
+        return f"Победа {outcome}"
+    rounds = re.search(r"(?:O/U|Over/Under)\s*(\d+(?:\.\d+)?)\s*Rounds", question, re.I)
+    if rounds and outcome.lower() in {"over", "under"}:
+        return f"{'ТБ' if outcome.lower() == 'over' else 'ТМ'} {rounds.group(1).replace('.', ',')} раунда"
+    if outcome.lower() in {"yes", "no"}:
+        return f"{question} — {'да' if outcome.lower() == 'yes' else 'нет'}"
+    return f"{question} — {outcome}"
+
+
+def _history_from_card(card: str) -> str:
+    sections = card.split("\n\n", 2)[1:]
+    if not sections:
+        return "История бойцов пока недоступна."
+    formatted = []
+    for section in sections:
+        lines = []
+        for line in section.splitlines():
+            if line.startswith("• ") and " · " in line:
+                line = " · ".join(line.split(" · ")[:3])
+            lines.append(line)
+        formatted.append("\n".join(lines))
+    return "\n\n".join(formatted)
 
 
 class UfcPolymarket:
@@ -122,6 +152,7 @@ class UfcPolymarket:
         report = build_report_from_event_url(upcoming.event_url)
         singles = discover_singles(report.event)
         bouts = {bout.bout_id: bout for bout in report.event.bouts}
+        bout_order = {bout.bout_id: index for index, bout in enumerate(report.event.bouts)}
         with self._connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO catalogues VALUES (?,?,?,?)",
@@ -129,6 +160,7 @@ class UfcPolymarket:
                  datetime.now(UTC).isoformat()),
             )
             for item in singles:
+                item = {**item, "bout_order": bout_order[item["bout_id"]]}
                 bout = bouts[item["bout_id"]]
                 db.execute(
                     "INSERT OR IGNORE INTO candidates "
@@ -152,6 +184,7 @@ class UfcPolymarket:
         if not isinstance(singles, list) or len(singles) > 1000:
             raise ValueError("Некорректный список исходов")
         bouts = {bout.bout_id: bout for bout in event.bouts}
+        bout_order = {bout.bout_id: index for index, bout in enumerate(event.bouts)}
         with self._connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO catalogues VALUES (?,?,?,?)",
@@ -166,12 +199,19 @@ class UfcPolymarket:
                     or Decimal(str(item.get("decimal", "0"))) < Decimal("1.70")
                 ):
                     raise ValueError("Список содержит некорректный исход")
+                item = {**item, "bout_order": bout_order[item["bout_id"]]}
                 db.execute(
                     "INSERT OR IGNORE INTO candidates "
                     "(token_id,event_slug,event_name,event_date,payload,card) VALUES (?,?,?,?,?,?)",
                     (item["token_id"], event.event_slug, event.event_name, event.event_date,
                      json.dumps(item, ensure_ascii=False), _card(item, bouts[item["bout_id"]])),
                 )
+                # Keep the original quote and decision; update only card order for older imports.
+                row = db.execute("SELECT id,payload FROM candidates WHERE token_id=?", (item["token_id"],)).fetchone()
+                saved = json.loads(row["payload"])
+                if saved.get("bout_order") != item["bout_order"]:
+                    saved["bout_order"] = item["bout_order"]
+                    db.execute("UPDATE candidates SET payload=? WHERE id=?", (json.dumps(saved, ensure_ascii=False), row["id"]))
         return self._list(user_id, 0)
 
     def handle_action(self, action: str, user_id: int) -> dict:
@@ -182,6 +222,11 @@ class UfcPolymarket:
                 return self._picks(user_id, max(int(action.rsplit(":", 1)[1]), 0))
             if action.startswith("ufc:poly:show:"):
                 return self._show(int(action.rsplit(":", 1)[1]), user_id)
+            if action.startswith("ufc:poly:bout:"):
+                _, candidate_id, page = action.rsplit(":", 2)
+                return self._bout(int(candidate_id), user_id, int(page))
+            if action.startswith("ufc:poly:history:"):
+                return self._history(int(action.rsplit(":", 1)[1]), user_id)
             if action.startswith("ufc:poly:select:"):
                 return self._decide(int(action.rsplit(":", 1)[1]), user_id, "selected")
             if action.startswith("ufc:poly:reject:"):
@@ -205,29 +250,32 @@ class UfcPolymarket:
             rows = db.execute(
                 "SELECT c.id,c.payload,d.status FROM candidates c "
                 "LEFT JOIN decisions d ON d.candidate_id=c.id AND d.user_id=? "
-                "WHERE c.event_slug=? ORDER BY c.id LIMIT ? OFFSET ?",
-                (user_id, event["event_slug"], PAGE_SIZE, page * PAGE_SIZE),
+                "WHERE c.event_slug=? ORDER BY c.id",
+                (user_id, event["event_slug"]),
             ).fetchall()
-        buttons = []
-        lines = [
-            f"Ординары Polymarket · {event['event_name']}",
-            f"{event['count']} исходов от 1,70 · страница {page+1}",
-            "Цена — ориентир лучшего ask, без глубины и комиссии.",
-            "",
-        ]
-        for index, row in enumerate(rows, start=page * PAGE_SIZE + 1):
+        bouts: dict[str, dict] = {}
+        for row in rows:
             item = json.loads(row["payload"])
-            marker = "✅ " if row["status"] == "selected" else "❌ " if row["status"] == "rejected" else ""
-            lines.append(
-                f"{index}. {marker}{item['bout']} · {item['question']} — {item['outcome']} · {item['decimal']}"
-            )
-            buttons.append([{
-                "text": f"{index}. Открыть",
-                "callback_data": f"ufc:poly:show:{row['id']}",
-            }])
+            key = item.get("bout_id") or item["bout"]
+            group = bouts.setdefault(key, {"id": row["id"], "item": item, "count": 0, "selected": 0})
+            group["count"] += 1
+            group["selected"] += row["status"] in {"selected", "settled"}
+        ordered = sorted(bouts.values(), key=lambda group: (group["item"].get("bout_order", 999), group["item"]["bout"]))
+        visible = ordered[page * BOUT_PAGE_SIZE:(page + 1) * BOUT_PAGE_SIZE]
+        buttons = [
+            [{"text": f"{group['item']['bout']} · {group['count']} исходов"
+                      + (f" · ✅ {group['selected']}" if group["selected"] else ""),
+              "callback_data": f"ufc:poly:bout:{group['id']}:0"}]
+            for group in visible
+        ]
+        lines = [
+            f"🥊 {event['event_name']}",
+            f"Ординары Polymarket: {len(ordered)} боёв, {event['count']} исходов от 1,70.",
+            "Выберите бой. Внутри — исходы и история бойцов.",
+        ]
         if page:
             buttons.append([{"text": "◀ Назад", "callback_data": f"ufc:poly:list:{page-1}"}])
-        if (page + 1) * PAGE_SIZE < event["count"]:
+        if (page + 1) * BOUT_PAGE_SIZE < len(ordered):
             buttons.append([{"text": "Далее ▶", "callback_data": f"ufc:poly:list:{page+1}"}])
         buttons += [
             [{"text": "📊 Мои выборы и статистика", "callback_data": "ufc:poly:stats"}],
@@ -235,6 +283,53 @@ class UfcPolymarket:
             [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ]
         return {"text": "\n".join(lines), "buttons": buttons}
+
+    def _bout(self, candidate_id: int, user_id: int, page: int = 0) -> dict:
+        with self._connect() as db:
+            anchor = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+            if not anchor:
+                raise ValueError("Бой не найден")
+            anchor_item = json.loads(anchor["payload"])
+            rows = db.execute(
+                "SELECT c.id,c.payload,d.status FROM candidates c LEFT JOIN decisions d "
+                "ON d.candidate_id=c.id AND d.user_id=? WHERE c.event_slug=? ORDER BY c.id",
+                (user_id, anchor["event_slug"]),
+            ).fetchall()
+        key = anchor_item.get("bout_id") or anchor_item["bout"]
+        outcomes = [(row, json.loads(row["payload"])) for row in rows]
+        outcomes = [(row, item) for row, item in outcomes if (item.get("bout_id") or item["bout"]) == key]
+        visible = outcomes[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+        buttons = []
+        for row, item in visible:
+            marker = "✅ " if row["status"] in {"selected", "settled"} else "❌ " if row["status"] == "rejected" else ""
+            buttons.append([{"text": f"{marker}{_outcome_name(item)} · {item['decimal']}",
+                             "callback_data": f"ufc:poly:show:{row['id']}"}])
+        if page:
+            buttons.append([{"text": "◀ Исходы", "callback_data": f"ufc:poly:bout:{candidate_id}:{page-1}"}])
+        if (page + 1) * PAGE_SIZE < len(outcomes):
+            buttons.append([{"text": "Ещё исходы ▶", "callback_data": f"ufc:poly:bout:{candidate_id}:{page+1}"}])
+        buttons.extend([
+            [{"text": "📋 Последние бои бойцов", "callback_data": f"ufc:poly:history:{candidate_id}"}],
+            [{"text": "◀ К боям", "callback_data": "ufc:poly"}],
+            [{"text": "🥊 UFC", "callback_data": "ufc:home"}],
+            [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+        ])
+        return {"text": f"🥊 {anchor_item['bout']}\n{len(outcomes)} исходов от 1,70 · страница {page+1}\n\nВыберите исход или откройте историю бойцов.", "buttons": buttons}
+
+    def _history(self, candidate_id: int, user_id: int) -> dict:
+        with self._connect() as db:
+            row = db.execute("SELECT payload,card FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not row:
+            raise ValueError("Бой не найден")
+        item = json.loads(row["payload"])
+        return {
+            "text": f"📋 {item['bout']}\n\n{_history_from_card(row['card'])}"[:4000],
+            "buttons": [
+                [{"text": "◀ К исходам боя", "callback_data": f"ufc:poly:bout:{candidate_id}:0"}],
+                [{"text": "🥊 UFC", "callback_data": "ufc:home"}],
+                [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
+            ],
+        }
 
     def _show(self, candidate_id: int, user_id: int) -> dict:
         with self._connect() as db:
@@ -245,18 +340,25 @@ class UfcPolymarket:
             ).fetchone()
         if not row:
             raise ValueError("Исход не найден")
-        status = row["status"] or "Не выбран"
+        item = json.loads(row["payload"])
+        status = {"selected": "✅ Выбран", "rejected": "❌ Отклонён", "settled": "Рассчитан"}.get(row["status"], "Не выбран")
         buttons = []
-        if row["status"] != "selected":
+        if row["status"] in {None, "rejected"}:
             buttons.append([{"text": "✅ Выбрать исход", "callback_data": f"ufc:poly:select:{candidate_id}"}])
-        if row["status"] not in {"rejected", "selected", "settled"}:
+        if row["status"] is None:
             buttons.append([{"text": "❌ Отклонить исход", "callback_data": f"ufc:poly:reject:{candidate_id}"}])
         buttons += [
-            [{"text": "◀ К списку", "callback_data": "ufc:poly"}],
+            [{"text": "◀ К исходам боя", "callback_data": f"ufc:poly:bout:{candidate_id}:0"}],
             [{"text": "🥊 UFC", "callback_data": "ufc:home"}],
             [{"text": "🏠 Главное меню", "callback_data": "main:home"}],
         ]
-        return {"text": f"{row['card']}\n\nСтатус: {status}"[:4000], "buttons": buttons}
+        return {
+            "text": (f"🥊 {item['bout']}\n\n"
+                     f"🎯 Исход\n{_outcome_name(item)}\n\n"
+                     f"Коэффициент: {item['decimal']}\nСтатус: {status}\n\n"
+                     "Цена — ориентир лучшего ask без глубины и комиссии."),
+            "buttons": buttons,
+        }
 
     def _picks(self, user_id: int, page: int) -> dict:
         with self._connect() as db:
